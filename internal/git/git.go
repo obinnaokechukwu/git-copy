@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -101,7 +102,7 @@ func InitEmptyBare(path string) error {
 	return err
 }
 
-func PushMirror(ctx context.Context, bareRepoPath, remoteURL string) error {
+func PushMirror(ctx context.Context, bareRepoPath, remoteURL string, env []string) error {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 20*time.Minute)
@@ -109,6 +110,9 @@ func PushMirror(ctx context.Context, bareRepoPath, remoteURL string) error {
 	}
 	cmd := exec.CommandContext(ctx, "git", "push", "--mirror", "--force", remoteURL)
 	cmd.Dir = bareRepoPath
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

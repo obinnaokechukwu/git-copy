@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -158,11 +159,40 @@ func syncTarget(ctx context.Context, repoPath, repoKey string, cfg config.RepoCo
 		return fmt.Errorf("failed to move scrubbed repo into place: %w", err)
 	}
 
-	// Push mirror
-	if err := gitx.PushMirror(ctx, finalBare, t.RepoURL); err != nil {
+	// Push mirror - set GH_TOKEN for GitHub HTTPS URLs with multi-account support
+	pushEnv := getPushEnv(t)
+	if err := gitx.PushMirror(ctx, finalBare, t.RepoURL, pushEnv); err != nil {
 		return err
 	}
 	return nil
+}
+
+// getPushEnv returns environment variables needed for pushing to the target.
+// For GitHub HTTPS URLs, it gets the token for the specific account.
+func getPushEnv(t config.Target) []string {
+	// Only needed for GitHub HTTPS URLs
+	if !strings.Contains(t.RepoURL, "github.com") || !strings.HasPrefix(t.RepoURL, "https://") {
+		return nil
+	}
+	if t.Account == "" {
+		return nil
+	}
+	// Try to get token for this specific account using gh CLI
+	token := ghTokenForAccount(t.Account)
+	if token == "" {
+		return nil
+	}
+	return []string{"GH_TOKEN=" + token}
+}
+
+// ghTokenForAccount retrieves the gh auth token for a specific account.
+func ghTokenForAccount(account string) string {
+	cmd := exec.Command("gh", "auth", "token", "--user", account)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func exportFilterImport(ctx context.Context, srcRepo, dstBare string, rules scrub.CompiledRules) error {
@@ -199,11 +229,19 @@ func exportFilterImport(ctx context.Context, srcRepo, dstBare string, rules scru
 		filterErrCh <- filter.Filter(expStdout, impStdin)
 	}()
 
-	if err := exp.Wait(); err != nil {
+	// Wait for filter to finish FIRST - it reads from export stdout.
+	// We must drain the pipe before calling exp.Wait(), which closes it.
+	ferr := <-filterErrCh
+
+	// Now wait for export process (pipe is drained, safe to close)
+	expErr := exp.Wait()
+
+	// Check errors in order of occurrence
+	if expErr != nil {
 		_ = imp.Process.Kill()
-		return fmt.Errorf("fast-export failed: %w (%s)", err, strings.TrimSpace(expStderr.String()))
+		return fmt.Errorf("fast-export failed: %w (%s)", expErr, strings.TrimSpace(expStderr.String()))
 	}
-	if ferr := <-filterErrCh; ferr != nil {
+	if ferr != nil {
 		_ = imp.Process.Kill()
 		return fmt.Errorf("export filter failed: %w", ferr)
 	}
