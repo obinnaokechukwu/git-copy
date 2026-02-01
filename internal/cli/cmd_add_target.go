@@ -22,7 +22,7 @@ func cmdAddTarget(repoFlag string) error {
 		return fmt.Errorf("repo is not initialized for git-copy: %w", err)
 	}
 
-	target, err := interactiveTargetSetup(cfg)
+	target, err := interactiveTargetSetup(cfg, repoPath)
 	if err != nil {
 		return err
 	}

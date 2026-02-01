@@ -2,11 +2,43 @@ package cli
 
 import (
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 
 	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
+
+// getOriginRepoName extracts the repo name from the origin remote URL.
+// Supports same formats as getOriginUsername.
+func getOriginRepoName(repoPath string) string {
+	res, err := gitx.Run(nil, repoPath, "remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	url := strings.TrimSpace(res.Stdout)
+	if url == "" {
+		return ""
+	}
+
+	// Remove .git suffix
+	url = strings.TrimSuffix(url, ".git")
+
+	// Get last path segment
+	parts := strings.Split(url, "/")
+	if len(parts) > 0 {
+		name := parts[len(parts)-1]
+		// Handle SSH format git@host:user/repo
+		if strings.Contains(name, ":") {
+			subparts := strings.Split(name, ":")
+			if len(subparts) > 1 {
+				name = subparts[len(subparts)-1]
+			}
+		}
+		return name
+	}
+	return ""
+}
 
 // getOriginUsername extracts the username/org from the origin remote URL.
 // Supports:
@@ -38,6 +70,17 @@ func getOriginUsername(repoPath string) string {
 	}
 
 	return ""
+}
+
+// getRepoDescription gets the repo description using gh cli.
+func getRepoDescription(repoPath string) string {
+	cmd := exec.Command("gh", "repo", "view", "--json", "description", "-q", ".description")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func commitConfigOnHeadBranch(repoPath, headBranch, message string) error {

@@ -52,7 +52,7 @@ func cmdInit(repoFlag string) error {
 
 	cfg := config.DefaultConfig(privateUser, headBranch)
 
-	target, err := interactiveTargetSetup(cfg)
+	target, err := interactiveTargetSetup(cfg, repoPath)
 	if err != nil {
 		return err
 	}

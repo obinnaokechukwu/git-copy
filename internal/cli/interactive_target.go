@@ -12,7 +12,7 @@ import (
 	"github.com/obinnaokechukwu/git-copy/internal/provider"
 )
 
-func interactiveTargetSetup(cfg config.RepoConfig) (config.Target, error) {
+func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Target, error) {
 	provChoice, err := promptSelect("Target hosting provider:", []string{
 		"github", "gitlab", "gitea/forgejo", "custom (existing repo)",
 	}, 0)
@@ -20,7 +20,12 @@ func interactiveTargetSetup(cfg config.RepoConfig) (config.Target, error) {
 		return config.Target{}, err
 	}
 
-	label, err := promptString("Target label (alias used in commands)", "", true)
+	// Default label to provider name
+	defaultLabel := strings.Split(provChoice, "/")[0] // "gitea/forgejo" -> "gitea"
+	if defaultLabel == "custom (existing repo)" {
+		defaultLabel = "custom"
+	}
+	label, err := promptString("Target label (alias used in commands)", defaultLabel, true)
 	if err != nil {
 		return config.Target{}, err
 	}
@@ -35,11 +40,20 @@ func interactiveTargetSetup(cfg config.RepoConfig) (config.Target, error) {
 	if err != nil {
 		return config.Target{}, err
 	}
-	repoName, err := promptString("Target repo name", "", true)
+
+	// Default repo name to current repo name
+	defaultRepoName := getOriginRepoName(repoPath)
+	repoName, err := promptString("Target repo name", defaultRepoName, true)
 	if err != nil {
 		return config.Target{}, err
 	}
-	description, _ := promptString("Repo description (optional)", "", false)
+
+	// Get description, try to fetch from current repo if using gh
+	defaultDesc := ""
+	if ghAvailable() {
+		defaultDesc = getRepoDescription(repoPath)
+	}
+	description, _ := promptString("Repo description (optional)", defaultDesc, false)
 
 	var urls provider.RepoURLs
 	var repoURL string
