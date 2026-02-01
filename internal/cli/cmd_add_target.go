@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/obinnaokechukwu/git-copy/internal/config"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 	"github.com/obinnaokechukwu/git-copy/internal/repo"
 	"github.com/obinnaokechukwu/git-copy/internal/sync"
 )
@@ -20,6 +21,15 @@ func cmdAddTarget(repoFlag string) error {
 	cfg, err := repo.LoadRepoConfigFromAnyBranch(context.Background(), repoPath)
 	if err != nil {
 		return fmt.Errorf("repo is not initialized for git-copy: %w", err)
+	}
+
+	// Check for clean worktree EARLY, before any remote operations
+	clean, err := gitx.HasCleanWorktree(repoPath)
+	if err != nil {
+		return err
+	}
+	if !clean {
+		return fmt.Errorf("working tree is not clean; commit or stash changes before running git-copy add-target")
 	}
 
 	target, err := interactiveTargetSetup(cfg, repoPath)
