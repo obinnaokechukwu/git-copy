@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -54,9 +55,11 @@ type Rules struct {
 }
 
 type CompiledRules struct {
-	private string
-	repl    string
-	extra   [][2]string
+	private   string
+	privateRe *regexp.Regexp // case-insensitive pattern for private username
+	repl      string
+	extra     [][2]string
+	extraRe   []*regexp.Regexp // case-insensitive patterns for extra replacements
 
 	exclude []string
 	optIn   map[string]bool
@@ -74,8 +77,14 @@ func Compile(r Rules) (CompiledRules, error) {
 	if repl == "" {
 		return CompiledRules{}, errors.New("replacement is required")
 	}
-	if strings.Contains(repl, priv) {
+	if strings.Contains(strings.ToLower(repl), strings.ToLower(priv)) {
 		return CompiledRules{}, fmt.Errorf("replacement string must not contain the private username")
+	}
+
+	// Compile case-insensitive regex for private username
+	privateRe, err := regexp.Compile("(?i)" + regexp.QuoteMeta(priv))
+	if err != nil {
+		return CompiledRules{}, fmt.Errorf("invalid private username pattern: %w", err)
 	}
 
 	// Start with non-negotiable patterns
@@ -113,12 +122,18 @@ func Compile(r Rules) (CompiledRules, error) {
 	}
 
 	extraPairs := make([][2]string, 0, len(r.ExtraReplacements))
+	extraRe := make([]*regexp.Regexp, 0, len(r.ExtraReplacements))
 	for k, v := range r.ExtraReplacements {
 		k = strings.TrimSpace(k)
 		if k == "" {
 			continue
 		}
+		re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(k))
+		if err != nil {
+			return CompiledRules{}, fmt.Errorf("invalid extra replacement pattern %q: %w", k, err)
+		}
 		extraPairs = append(extraPairs, [2]string{k, v})
+		extraRe = append(extraRe, re)
 	}
 
 	pubName := strings.TrimSpace(r.PublicAuthorName)
@@ -131,12 +146,14 @@ func Compile(r Rules) (CompiledRules, error) {
 	}
 
 	return CompiledRules{
-		private:          priv,
-		repl:             repl,
-		extra:            extraPairs,
-		exclude:          finalEx,
-		optIn:            opt,
-		publicAuthorName: pubName,
+		private:           priv,
+		privateRe:         privateRe,
+		repl:              repl,
+		extra:             extraPairs,
+		extraRe:           extraRe,
+		exclude:           finalEx,
+		optIn:             opt,
+		publicAuthorName:  pubName,
 		publicAuthorEmail: pubEmail,
 	}, nil
 }
@@ -162,11 +179,82 @@ func (c CompiledRules) ShouldExclude(p string) bool {
 }
 
 func (c CompiledRules) RewriteString(s string) string {
-	out := strings.ReplaceAll(s, c.private, c.repl)
-	for _, kv := range c.extra {
-		out = strings.ReplaceAll(out, kv[0], kv[1])
+	out := c.privateRe.ReplaceAllStringFunc(s, func(match string) string {
+		return applyCasePattern(match, c.repl)
+	})
+	for i, re := range c.extraRe {
+		repl := c.extra[i][1]
+		out = re.ReplaceAllStringFunc(out, func(match string) string {
+			return applyCasePattern(match, repl)
+		})
 	}
 	return out
+}
+
+// RewriteBytes performs case-preserving replacement on byte slices.
+func (c CompiledRules) RewriteBytes(b []byte) []byte {
+	out := c.privateRe.ReplaceAllFunc(b, func(match []byte) []byte {
+		return []byte(applyCasePattern(string(match), c.repl))
+	})
+	for i, re := range c.extraRe {
+		repl := c.extra[i][1]
+		out = re.ReplaceAllFunc(out, func(match []byte) []byte {
+			return []byte(applyCasePattern(string(match), repl))
+		})
+	}
+	return out
+}
+
+// applyCasePattern applies the case pattern of match to replacement.
+// - All lowercase match → all lowercase replacement
+// - All uppercase match → all uppercase replacement
+// - Title case match (first upper, rest lower) → title case replacement
+// - Otherwise, use replacement as-is
+func applyCasePattern(match, replacement string) string {
+	if len(match) == 0 {
+		return replacement
+	}
+
+	allLower := true
+	allUpper := true
+	for _, r := range match {
+		if r >= 'A' && r <= 'Z' {
+			allLower = false
+		}
+		if r >= 'a' && r <= 'z' {
+			allUpper = false
+		}
+	}
+
+	if allLower {
+		return strings.ToLower(replacement)
+	}
+	if allUpper {
+		return strings.ToUpper(replacement)
+	}
+
+	// Check for title case (first letter upper, rest lower)
+	runes := []rune(match)
+	if len(runes) > 0 && runes[0] >= 'A' && runes[0] <= 'Z' {
+		restLower := true
+		for _, r := range runes[1:] {
+			if r >= 'A' && r <= 'Z' {
+				restLower = false
+				break
+			}
+		}
+		if restLower {
+			// Title case: capitalize first letter, lowercase rest
+			replRunes := []rune(strings.ToLower(replacement))
+			if len(replRunes) > 0 && replRunes[0] >= 'a' && replRunes[0] <= 'z' {
+				replRunes[0] = replRunes[0] - 'a' + 'A'
+			}
+			return string(replRunes)
+		}
+	}
+
+	// Mixed case or unknown pattern: use replacement as-is
+	return replacement
 }
 
 func (c CompiledRules) PublicAuthorName() string  { return c.publicAuthorName }

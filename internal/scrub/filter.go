@@ -2,7 +2,6 @@ package scrub
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"strconv"
@@ -488,13 +487,7 @@ func (f *ExportFilter) resolveCommitRef(ref string) string {
 }
 
 func (f *ExportFilter) rewriteBytes(b []byte) []byte {
-	// username replacement
-	out := bytes.ReplaceAll(b, []byte(f.rules.Private()), []byte(f.rules.Replacement()))
-	// extra replacements
-	for _, kv := range f.rules.extra {
-		out = bytes.ReplaceAll(out, []byte(kv[0]), []byte(kv[1]))
-	}
-	return out
+	return f.rules.RewriteBytes(b)
 }
 
 func rewriteIdentityLine(kind, line string, rules CompiledRules) string {

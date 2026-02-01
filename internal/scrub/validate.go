@@ -72,7 +72,8 @@ func ValidateScrubbedRepo(ctx context.Context, bareRepoPath string, privateUsern
 		return err
 	}
 
-	needle := []byte(privateUsername)
+	needleLower := bytes.ToLower([]byte(privateUsername))
+	privateUsernameLower := strings.ToLower(privateUsername)
 	br := bufio.NewReader(stdout)
 	for {
 		h, err := br.ReadString('\n')
@@ -104,7 +105,8 @@ func ValidateScrubbedRepo(ctx context.Context, bareRepoPath string, privateUsern
 		// Consume trailing newline after object payload
 		_, _ = br.ReadByte()
 
-		if bytes.Contains(buf, needle) || strings.Contains(h, privateUsername) {
+		// Case-insensitive check for private username
+		if bytes.Contains(bytes.ToLower(buf), needleLower) || strings.Contains(strings.ToLower(h), privateUsernameLower) {
 			_ = cmd.Process.Kill()
 			return ValidationError{Reason: "private username still present in scrubbed git objects"}
 		}
