@@ -204,7 +204,7 @@ After `git-copy init`, you'll be prompted to install the daemon for auto-sync.
 - **Validation**: Automatically validates scrubbed repos for:
   - Presence of private username in any file
   - Forbidden files (`.env`, `CLAUDE.md` by default)
-- **Non-negotiable Exclusions**: `.git-copy/**` is always excluded
+- **Non-negotiable Exclusions**: `.git-copy/**` and `.claude/**` are always excluded
 - **Opt-In Override**: Files in `opt_in` bypass `exclude` patterns
 - **Author Protection**: Rewrites commit authors to prevent identity leakage
 - **Atomic Updates**: Uses temporary repos and atomic rename for safe caching
