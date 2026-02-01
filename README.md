@@ -202,25 +202,6 @@ go test ./...
 go install ./cmd/git-copy
 ```
 
-## Project Structure
-
-```
-git-copy/
-├── cmd/git-copy/          # Main CLI entry point
-├── internal/
-│   ├── cli/               # Command implementations
-│   ├── config/            # Configuration handling
-│   ├── daemon/            # Daemon mode (auto-sync)
-│   ├── git/               # Git operations wrapper
-│   ├── notify/            # File system watching
-│   ├── provider/          # GitHub/GitLab/Gitea clients
-│   ├── repo/              # Repository discovery
-│   ├── scrub/             # History scrubbing logic
-│   ├── state/             # Sync state tracking
-│   └── sync/              # Sync orchestration
-└── README.md
-```
-
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
