@@ -135,6 +135,12 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		}
 		urls = urls2
 		auth = config.AuthRef{Method: "token_env", TokenEnv: tokenEnv, BaseURL: baseURL}
+		// Set topics if any were specified
+		if len(topics) > 0 {
+			if err := gl.SetRepoTopics(ctx, account, repoName, topics); err != nil {
+				fmt.Printf("Warning: failed to set topics: %v\n", err)
+			}
+		}
 	case "gitea/forgejo":
 		provName = "gitea"
 		baseURL, _ := promptString("Gitea/Forgejo base URL (e.g. https://git.example.com)", "", true)
@@ -153,6 +159,12 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		}
 		urls = urls2
 		auth = config.AuthRef{Method: "token_env", TokenEnv: tokenEnv, BaseURL: baseURL}
+		// Set topics if any were specified
+		if len(topics) > 0 {
+			if err := gt.SetRepoTopics(ctx, account, repoName, topics); err != nil {
+				fmt.Printf("Warning: failed to set topics: %v\n", err)
+			}
+		}
 	case "custom (existing repo)":
 		provName = "custom"
 		auth = config.AuthRef{Method: "none"}
