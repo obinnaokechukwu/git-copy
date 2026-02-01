@@ -20,8 +20,8 @@ type RepoConfig struct {
 }
 
 type TargetDefaults struct {
-	Exclude []string          `json:"exclude"`
-	OptIn   []string          `json:"opt_in"`
+	Exclude               []string          `json:"exclude"`
+	OptIn                 []string          `json:"opt_in"`
 	ExtraReplacementPairs map[string]string `json:"extra_replacements,omitempty"`
 }
 

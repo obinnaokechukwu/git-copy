@@ -112,20 +112,33 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 		return err
 	}
 
-	// Parse commit header
 	var (
 		oldMark       string
-		parents       []string
-		merges        []string
 		authorLine    string
 		committerLine string
 		encodingLine  string
 		origOidLine   string
-		message       []byte
-		otherHeader   []string
-		ops           []string
+
+		otherHeader []string
+
+		message []byte
+		parent  string
+		merges  []string
+		ops     []string
 	)
 
+	// For commits, git fast-export emits:
+	//   commit <ref>
+	//   mark/author/committer/(encoding)...
+	//   data <n>
+	//   <n bytes of message>
+	//   from/merge/file-ops...
+	//   
+
+	//
+	// Important: commit message payload is NOT followed by a delimiter newline; the next command
+	// begins immediately after the <n> bytes. Therefore we must not consume an extra byte after
+	// reading the payload.
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
@@ -135,7 +148,7 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 		switch {
 		case strings.HasPrefix(line, "mark "):
 			oldMark = strings.TrimSpace(strings.TrimPrefix(line, "mark "))
-			f.markMap[oldMark] = oldMark // default mapping unless skipped
+			f.markMap[oldMark] = oldMark // default unless remapped by skipped commit
 		case strings.HasPrefix(line, "original-oid "):
 			origOidLine = line
 		case strings.HasPrefix(line, "author "):
@@ -145,11 +158,10 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 		case strings.HasPrefix(line, "encoding "):
 			encodingLine = line
 		case strings.HasPrefix(line, "from "):
-			p := strings.TrimSpace(strings.TrimPrefix(line, "from "))
-			parents = append(parents, p)
+			// Some exporters might place from before data; accept it either way.
+			parent = strings.TrimSpace(strings.TrimPrefix(line, "from "))
 		case strings.HasPrefix(line, "merge "):
-			m := strings.TrimSpace(strings.TrimPrefix(line, "merge "))
-			merges = append(merges, m)
+			merges = append(merges, strings.TrimSpace(strings.TrimPrefix(line, "merge ")))
 		case strings.HasPrefix(line, "data "):
 			n, err := parseDataLen(line)
 			if err != nil {
@@ -159,59 +171,51 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 			if _, err := io.ReadFull(br, b); err != nil {
 				return err
 			}
-			// trailing newline
-			if _, err := br.ReadByte(); err != nil {
-				return err
-			}
 			message = f.rewriteBytes(b)
-		case line == "\n":
-			// commit with no file ops
-			break
-		default:
-			// Some exporters include "commit refs/..." followed by other headers; keep them.
-			otherHeader = append(otherHeader, line)
-		}
 
-		// After data, we continue reading until blank line ends record; but ops can appear.
-		if line == "\n" {
-			break
-		}
-
-		// After message data, next lines are file ops until blank line. We'll detect by peeking at next line if we already read message.
-		if message != nil {
+			// Parse trailing lines until the blank line ends the commit record.
 			for {
 				l2, err := br.ReadString('\n')
 				if err != nil {
 					return err
 				}
 				if l2 == "\n" {
-					// end of commit record
 					break
+				}
+				if strings.HasPrefix(l2, "from ") {
+					parent = strings.TrimSpace(strings.TrimPrefix(l2, "from "))
+					continue
+				}
+				if strings.HasPrefix(l2, "merge ") {
+					merges = append(merges, strings.TrimSpace(strings.TrimPrefix(l2, "merge ")))
+					continue
 				}
 				ops = append(ops, l2)
 			}
-			break
+			goto EMIT
+		default:
+			otherHeader = append(otherHeader, line)
 		}
 	}
 
-	// Determine parent mark (only single-parent commits are eligible for skipping)
+EMIT:
 	parentResolved := ""
-	if len(parents) == 1 {
-		parentResolved = f.resolveCommitRef(parents[0])
+	if parent != "" {
+		parentResolved = f.resolveCommitRef(parent)
 	}
 
-	// Rewrite and filter file ops
 	filteredOps, keptOps, err := f.filterOps(ops)
 	if err != nil {
 		return err
 	}
 
-	// Skip if no ops left and not a merge commit
+	// Skip commit if exclusions remove all file operations and it's not a merge commit.
 	if keptOps == 0 && len(merges) == 0 {
 		if oldMark != "" {
+			// Any later reference to this mark should resolve to the parent.
 			f.markMap[oldMark] = parentResolved
 		}
-		// Emit a reset so the branch/tip moves to the parent (or deletes if none)
+		// Ensure branch tip doesn't advance to a skipped commit.
 		_, _ = bw.WriteString("reset " + newRef + "\n")
 		if parentResolved != "" {
 			_, _ = bw.WriteString("from " + parentResolved + "\n")
@@ -220,7 +224,7 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 		return nil
 	}
 
-	// Emit commit record
+	// Emit commit record (ordering compatible with git fast-import).
 	_, _ = bw.WriteString("commit " + newRef + "\n")
 	if oldMark != "" {
 		_, _ = bw.WriteString("mark " + oldMark + "\n")
@@ -228,8 +232,6 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 	if origOidLine != "" {
 		_, _ = bw.WriteString(origOidLine)
 	}
-
-	// Rewrite author/committer: overwrite identity while preserving timestamp
 	if authorLine != "" {
 		_, _ = bw.WriteString(rewriteIdentityLine("author", authorLine, f.rules))
 	}
@@ -239,21 +241,19 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 	if encodingLine != "" {
 		_, _ = bw.WriteString(encodingLine)
 	}
-	// Rewrite parents
-	if len(parents) == 1 {
-		p := f.resolveCommitRef(parents[0])
-		if p != "" {
-			_, _ = bw.WriteString("from " + p + "\n")
-		}
-	} else if len(parents) > 1 {
-		// Shouldn't happen; fast-export uses one "from" plus merges.
-		for _, p0 := range parents {
-			p := f.resolveCommitRef(p0)
-			if p != "" {
-				_, _ = bw.WriteString("from " + p + "\n")
-				break
-			}
-		}
+	for _, h := range otherHeader {
+		_, _ = bw.WriteString(h)
+	}
+
+	// Commit message: do NOT add any delimiter newline after the payload.
+	_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(message)))
+	if _, err := bw.Write(message); err != nil {
+		return err
+	}
+
+	// Parents and merges appear after the message data.
+	if parentResolved != "" {
+		_, _ = bw.WriteString("from " + parentResolved + "\n")
 	}
 	for _, m0 := range merges {
 		m := f.resolveCommitRef(m0)
@@ -262,17 +262,6 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 		}
 		_, _ = bw.WriteString("merge " + m + "\n")
 	}
-
-	for _, h := range otherHeader {
-		_, _ = bw.WriteString(h)
-	}
-
-	// Commit message
-	_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(message)))
-	if _, err := bw.Write(message); err != nil {
-		return err
-	}
-	_, _ = bw.WriteString("\n")
 
 	for _, op := range filteredOps {
 		_, _ = bw.WriteString(op)
