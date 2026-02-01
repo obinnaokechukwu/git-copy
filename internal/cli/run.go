@@ -63,6 +63,13 @@ func Run(args []string) error {
 		return cmdRoots(args[1:])
 	case "repos":
 		return cmdRepos()
+	case "install":
+		fs := flag.NewFlagSet("install", flag.ExitOnError)
+		uninstall := fs.Bool("uninstall", false, "uninstall the daemon service")
+		_ = fs.Parse(args[1:])
+		return cmdInstall(*uninstall)
+	case "uninstall":
+		return cmdInstall(true)
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -86,7 +93,9 @@ Daemon:
   %s roots list
   %s repos
   %s serve
+  %s install [--uninstall]
+  %s uninstall
 
-`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
+`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
 }
 
