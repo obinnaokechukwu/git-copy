@@ -24,9 +24,11 @@ type Options struct {
 }
 
 type Result struct {
-	TargetLabel string
-	DidWork     bool
-	Error       error
+	TargetLabel  string
+	TargetURL    string
+	SourceCommit string // short hash of source HEAD
+	DidWork      bool
+	Error        error
 }
 
 func SyncRepo(ctx context.Context, repoPath string, cfg config.RepoConfig, onlyTarget string, opts Options) ([]Result, error) {
@@ -61,6 +63,7 @@ func SyncRepo(ctx context.Context, repoPath string, cfg config.RepoConfig, onlyT
 
 	repoKey := repoCacheKey(repoPath)
 	results := []Result{}
+	sourceCommit := gitx.HeadShort(repoPath)
 
 	for _, t := range cfg.Targets {
 		if onlyTarget != "" && t.Label != onlyTarget {
@@ -73,11 +76,11 @@ func SyncRepo(ctx context.Context, repoPath string, cfg config.RepoConfig, onlyT
 		}
 		// Skip if private refs unchanged and last sync succeeded
 		if ts.LastPrivateRefs == privateRefsHash && ts.LastError == "" {
-			results = append(results, Result{TargetLabel: t.Label, DidWork: false, Error: nil})
+			results = append(results, Result{TargetLabel: t.Label, TargetURL: t.RepoURL, SourceCommit: sourceCommit, DidWork: false, Error: nil})
 			continue
 		}
 
-		res := Result{TargetLabel: t.Label, DidWork: true}
+		res := Result{TargetLabel: t.Label, TargetURL: t.RepoURL, SourceCommit: sourceCommit, DidWork: true}
 
 		err := syncTarget(ctx, repoPath, repoKey, cfg, t, opts)
 		if err != nil {

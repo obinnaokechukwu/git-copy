@@ -238,3 +238,23 @@ func runCmdOutput(name string, args ...string) string {
 	out, _ := cmd.Output()
 	return strings.TrimSpace(string(out))
 }
+
+// isDaemonInstalled checks if the git-copy daemon service is installed.
+func isDaemonInstalled() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	switch runtime.GOOS {
+	case "linux":
+		servicePath := filepath.Join(home, systemdUserDir, systemdServiceName)
+		_, err := os.Stat(servicePath)
+		return err == nil
+	case "darwin":
+		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchdPlistName)
+		_, err := os.Stat(plistPath)
+		return err == nil
+	default:
+		return false
+	}
+}

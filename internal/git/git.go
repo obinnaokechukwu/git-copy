@@ -121,6 +121,15 @@ func PushMirror(ctx context.Context, bareRepoPath, remoteURL string, env []strin
 	return nil
 }
 
+// HeadShort returns the short hash of HEAD commit.
+func HeadShort(repoPath string) string {
+	res, err := Run(nil, repoPath, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(res.Stdout)
+}
+
 func ListRefs(repoPath string) (map[string]string, error) {
 	res, err := Run(nil, repoPath, "show-ref")
 	if err != nil {

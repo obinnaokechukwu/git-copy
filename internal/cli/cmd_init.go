@@ -82,11 +82,28 @@ func cmdInit(repoFlag string) error {
 
 	fmt.Println("Initialized git-copy configuration.")
 	fmt.Println("Running initial sync...")
-	_, err = sync.SyncRepo(context.Background(), repoPath, cfg, target.Label, sync.Options{Validate: true})
+	results, err := sync.SyncRepo(context.Background(), repoPath, cfg, target.Label, sync.Options{Validate: true})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Initial sync complete for target %q.\n", target.Label)
+	for _, r := range results {
+		if r.DidWork {
+			fmt.Printf("Synced %s → %s\n", r.SourceCommit, r.TargetURL)
+		}
+	}
 	fmt.Println("Note: Target repos are created as private. You choose if/when to make them public.")
+
+	// Offer to install daemon for auto-sync
+	if !isDaemonInstalled() {
+		install, _ := promptConfirm("Install background daemon for auto-sync?", true)
+		if install {
+			if err := cmdInstall(false); err != nil {
+				fmt.Printf("Warning: failed to install daemon: %v\n", err)
+				fmt.Println("You can install it later with: git-copy install")
+			}
+		} else {
+			fmt.Println("Tip: Run 'git-copy install' later to enable auto-sync, or 'git-copy sync' to sync manually.")
+		}
+	}
 	return nil
 }
