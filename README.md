@@ -20,13 +20,13 @@ Scrubbed one-way replication from private Git repos to public targets.
 ## Installation
 
 ```bash
-go install github.com/your-username/git-copy/cmd/git-copy@latest
+go install github.com/obinnaokechukwu/git-copy/cmd/git-copy@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/your-username/git-copy
+git clone https://github.com/obinnaokechukwu/git-copy
 cd git-copy
 go build -o git-copy ./cmd/git-copy
 ```
