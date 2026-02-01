@@ -13,6 +13,9 @@ import (
 )
 
 func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Target, error) {
+	// Load global preferences for account email defaults
+	globalPrefs := config.LoadGlobalPrefs()
+
 	provChoice, err := promptSelect("Target hosting provider:", []string{
 		"github", "gitlab", "gitea/forgejo", "custom (existing repo)",
 	}, 0)
@@ -160,7 +163,19 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 	}
 
 	pubName, _ := promptString("Public author name (optional)", replacement, false)
-	pubEmail, _ := promptString("Public author email (optional)", replacement+"@example.invalid", false)
+
+	// Use saved email for this account if available, otherwise use default
+	defaultEmail := globalPrefs.GetAccountEmail(account)
+	if defaultEmail == "" {
+		defaultEmail = replacement + "@example.invalid"
+	}
+	pubEmail, _ := promptString("Public author email (optional)", defaultEmail, false)
+
+	// Save the email for future use with this account
+	if pubEmail != "" && pubEmail != replacement+"@example.invalid" {
+		globalPrefs.SetAccountEmail(account, pubEmail)
+		_ = globalPrefs.Save() // Best effort, don't fail init if this fails
+	}
 
 	hm, _ := promptSelect("Initial history mode:", []string{"full (replay full history)", "future (start from now)"}, 0)
 	mode := "full"

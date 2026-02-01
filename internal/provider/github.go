@@ -44,8 +44,30 @@ func ghAvailable() bool {
 	return err == nil
 }
 
+// ghTokenForAccount retrieves the gh auth token for a specific account.
+// This enables multi-account support where the user has authenticated
+// multiple GitHub accounts with gh auth login.
+func ghTokenForAccount(account string) string {
+	cmd := exec.Command("gh", "auth", "token", "--user", account)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// ghCommandForAccount creates an exec.Cmd with the correct GH_TOKEN
+// environment variable set for the target account.
+func ghCommandForAccount(ctx context.Context, account string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	if token := ghTokenForAccount(account); token != "" {
+		cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
+	}
+	return cmd
+}
+
 func ghRepoExists(ctx context.Context, account, name string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "gh", "repo", "view", fmt.Sprintf("%s/%s", account, name))
+	cmd := ghCommandForAccount(ctx, account, "repo", "view", fmt.Sprintf("%s/%s", account, name))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -61,11 +83,11 @@ func ghRepoExists(ctx context.Context, account, name string) (bool, error) {
 
 func ghCreatePrivateRepo(ctx context.Context, account, name, description string) (RepoURLs, error) {
 	full := fmt.Sprintf("%s/%s", account, name)
-	args := []string{"repo", "create", full, "--private", "--confirm"}
+	args := []string{"repo", "create", full, "--private"}
 	if strings.TrimSpace(description) != "" {
 		args = append(args, "--description", description)
 	}
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd := ghCommandForAccount(ctx, account, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
