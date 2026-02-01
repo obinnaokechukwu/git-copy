@@ -7,6 +7,40 @@ import (
 	"strings"
 )
 
+// NonNegotiableDirs are directories that are always excluded and cannot be opted-in.
+// Add new directories here to exclude them everywhere.
+var NonNegotiableDirs = []string{".git-copy", ".claude"}
+
+// IsNonNegotiablePath returns true if the path is inside a non-negotiable directory.
+func IsNonNegotiablePath(p string) bool {
+	p = normPath(p)
+	for _, dir := range NonNegotiableDirs {
+		if p == dir || strings.HasPrefix(p, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// nonNegotiablePatterns returns glob patterns for all non-negotiable dirs.
+func nonNegotiablePatterns() []string {
+	patterns := make([]string, len(NonNegotiableDirs))
+	for i, dir := range NonNegotiableDirs {
+		patterns[i] = dir + "/**"
+	}
+	return patterns
+}
+
+// isNonNegotiablePattern returns true if the pattern is a non-negotiable glob pattern.
+func isNonNegotiablePattern(p string) bool {
+	for _, dir := range NonNegotiableDirs {
+		if p == dir+"/**" {
+			return true
+		}
+	}
+	return false
+}
+
 type Rules struct {
 	PrivateUsername   string
 	Replacement       string
@@ -44,17 +78,14 @@ func Compile(r Rules) (CompiledRules, error) {
 		return CompiledRules{}, fmt.Errorf("replacement string must not contain the private username")
 	}
 
-	ex := make([]string, 0, len(r.ExcludePatterns)+2)
-	ex = append(ex, ".git-copy/**") // non-negotiable
-	ex = append(ex, ".claude/**")   // non-negotiable
+	// Start with non-negotiable patterns
+	nnPatterns := nonNegotiablePatterns()
+	ex := make([]string, 0, len(r.ExcludePatterns)+len(nnPatterns))
+	ex = append(ex, nnPatterns...)
 
 	for _, p := range r.ExcludePatterns {
 		p = normPath(p)
-		if p == "" {
-			continue
-		}
-		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" ||
-			strings.HasPrefix(p, ".claude/") || p == ".claude" {
+		if p == "" || IsNonNegotiablePath(p) {
 			continue
 		}
 		ex = append(ex, p)
@@ -63,11 +94,7 @@ func Compile(r Rules) (CompiledRules, error) {
 	opt := map[string]bool{}
 	for _, p := range r.OptInPaths {
 		p = normPath(p)
-		if p == "" {
-			continue
-		}
-		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" ||
-			strings.HasPrefix(p, ".claude/") || p == ".claude" {
+		if p == "" || IsNonNegotiablePath(p) {
 			continue
 		}
 		opt[p] = true
@@ -75,7 +102,7 @@ func Compile(r Rules) (CompiledRules, error) {
 
 	finalEx := make([]string, 0, len(ex))
 	for _, p := range ex {
-		if p == ".git-copy/**" || p == ".claude/**" {
+		if isNonNegotiablePattern(p) {
 			finalEx = append(finalEx, p)
 			continue
 		}
@@ -119,8 +146,7 @@ func (c CompiledRules) Replacement() string { return c.repl }
 
 func (c CompiledRules) ShouldExclude(p string) bool {
 	p = normPath(p)
-	if p == ".git-copy" || strings.HasPrefix(p, ".git-copy/") ||
-		p == ".claude" || strings.HasPrefix(p, ".claude/") {
+	if IsNonNegotiablePath(p) {
 		return true
 	}
 	for _, pat := range c.exclude {
