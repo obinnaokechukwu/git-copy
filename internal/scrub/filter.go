@@ -130,11 +130,10 @@ func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufi
 	// For commits, git fast-export emits:
 	//   commit <ref>
 	//   mark/author/committer/(encoding)...
-	//   data <n>
+	//   data <n>\n
 	//   <n bytes of message>
 	//   from/merge/file-ops...
-	//   
-
+	//   \n
 	//
 	// Important: commit message payload is NOT followed by a delimiter newline; the next command
 	// begins immediately after the <n> bytes. Therefore we must not consume an extra byte after
@@ -358,46 +357,35 @@ func (f *ExportFilter) handleReset(firstLine string, br *bufio.Reader, bw *bufio
 	}
 	_, _ = bw.WriteString("reset " + newRef + "\n")
 
-	// reset may be followed by "from <ref>" or blank line
-	line, err := br.ReadString('\n')
+	// In git fast-export, a reset may be followed by:
+	//   from <ref>\n
+	// or nothing (unborn branch) or the next record immediately.
+	// We must not consume the next record if it is not a "from" line.
+	peek1, err := br.Peek(1)
 	if err != nil {
-		return err
+		return nil // EOF
 	}
-	if line == "\n" {
+	if peek1[0] == '\n' {
+		// rare blank line
+		_, _ = br.ReadByte()
 		_, _ = bw.WriteString("\n")
 		return nil
 	}
-	if strings.HasPrefix(line, "from ") {
-		p := strings.TrimSpace(strings.TrimPrefix(line, "from "))
-		p2 := f.resolveCommitRef(p)
-		if p2 != "" {
-			_, _ = bw.WriteString("from " + p2 + "\n")
-		}
-		// consume blank line
-		blank, err := br.ReadString('\n')
+	peek5, err := br.Peek(5)
+	if err == nil && string(peek5) == "from " {
+		line, err := br.ReadString('\n')
 		if err != nil {
 			return err
 		}
-		if blank != "\n" {
-			// unexpected but keep
-			_, _ = bw.WriteString(blank)
+		p0 := strings.TrimSpace(strings.TrimPrefix(line, "from "))
+		p1 := f.resolveCommitRef(p0)
+		if p1 != "" {
+			_, _ = bw.WriteString("from " + p1 + "\n")
 		} else {
-			_, _ = bw.WriteString("\n")
-		}
-		return nil
-	}
-	// unknown; write it and continue until blank
-	_, _ = bw.WriteString(line)
-	for {
-		l, err := br.ReadString('\n')
-		if err != nil {
-			return err
-		}
-		_, _ = bw.WriteString(l)
-		if l == "\n" {
-			return nil
+			_, _ = bw.WriteString(line)
 		}
 	}
+	return nil
 }
 
 func (f *ExportFilter) filterOps(ops []string) ([]string, int, error) {

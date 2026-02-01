@@ -101,12 +101,12 @@ func Compile(r Rules) (CompiledRules, error) {
 	}
 
 	return CompiledRules{
-		private:           priv,
-		repl:              repl,
-		extra:             extraPairs,
-		exclude:           finalEx,
-		optIn:             opt,
-		publicAuthorName:  pubName,
+		private:          priv,
+		repl:             repl,
+		extra:            extraPairs,
+		exclude:          finalEx,
+		optIn:            opt,
+		publicAuthorName: pubName,
 		publicAuthorEmail: pubEmail,
 	}, nil
 }
