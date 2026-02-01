@@ -2,10 +2,43 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
+
+// getOriginUsername extracts the username/org from the origin remote URL.
+// Supports:
+//   - git@github.com:username/repo.git
+//   - https://github.com/username/repo.git
+//   - ssh://git@github.com/username/repo.git
+func getOriginUsername(repoPath string) string {
+	res, err := gitx.Run(nil, repoPath, "remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	url := strings.TrimSpace(res.Stdout)
+	if url == "" {
+		return ""
+	}
+
+	// SSH format: git@host:username/repo.git
+	if strings.Contains(url, "@") && strings.Contains(url, ":") && !strings.Contains(url, "://") {
+		re := regexp.MustCompile(`@[^:]+:([^/]+)/`)
+		if m := re.FindStringSubmatch(url); len(m) > 1 {
+			return m[1]
+		}
+	}
+
+	// HTTPS/SSH URL format: https://host/username/repo.git or ssh://git@host/username/repo.git
+	re := regexp.MustCompile(`://[^/]+/([^/]+)/`)
+	if m := re.FindStringSubmatch(url); len(m) > 1 {
+		return m[1]
+	}
+
+	return ""
+}
 
 func commitConfigOnHeadBranch(repoPath, headBranch, message string) error {
 	clean, err := gitx.HasCleanWorktree(repoPath)

@@ -36,7 +36,10 @@ func cmdInit(repoFlag string) error {
 		headBranch = "main"
 	}
 
-	privateUser, err := promptString("Private username to scrub (exact string)", "", true)
+	// Try to infer private username from origin remote URL
+	defaultPrivateUser := getOriginUsername(repoPath)
+
+	privateUser, err := promptString("Private username to scrub (exact string)", defaultPrivateUser, true)
 	if err != nil {
 		return err
 	}
