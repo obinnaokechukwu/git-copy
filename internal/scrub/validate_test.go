@@ -9,8 +9,30 @@ import (
 	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
+// clearGitEnvVars temporarily unsets git author/committer env vars for testing
+// Returns a cleanup function that restores the original values
+func clearGitEnvVars(t *testing.T) func() {
+	t.Helper()
+	envVars := []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"}
+	saved := make(map[string]string)
+	for _, env := range envVars {
+		if val, ok := os.LookupEnv(env); ok {
+			saved[env] = val
+		}
+		os.Unsetenv(env)
+	}
+	return func() {
+		for env, val := range saved {
+			os.Setenv(env, val)
+		}
+	}
+}
+
 func initRepo(t *testing.T, content string) string {
 	t.Helper()
+	cleanup := clearGitEnvVars(t)
+	defer cleanup()
+
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

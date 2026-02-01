@@ -44,15 +44,17 @@ func Compile(r Rules) (CompiledRules, error) {
 		return CompiledRules{}, fmt.Errorf("replacement string must not contain the private username")
 	}
 
-	ex := make([]string, 0, len(r.ExcludePatterns)+1)
+	ex := make([]string, 0, len(r.ExcludePatterns)+2)
 	ex = append(ex, ".git-copy/**") // non-negotiable
+	ex = append(ex, ".claude/**")   // non-negotiable
 
 	for _, p := range r.ExcludePatterns {
 		p = normPath(p)
 		if p == "" {
 			continue
 		}
-		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" {
+		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" ||
+			strings.HasPrefix(p, ".claude/") || p == ".claude" {
 			continue
 		}
 		ex = append(ex, p)
@@ -64,7 +66,8 @@ func Compile(r Rules) (CompiledRules, error) {
 		if p == "" {
 			continue
 		}
-		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" {
+		if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" ||
+			strings.HasPrefix(p, ".claude/") || p == ".claude" {
 			continue
 		}
 		opt[p] = true
@@ -72,7 +75,7 @@ func Compile(r Rules) (CompiledRules, error) {
 
 	finalEx := make([]string, 0, len(ex))
 	for _, p := range ex {
-		if p == ".git-copy/**" {
+		if p == ".git-copy/**" || p == ".claude/**" {
 			finalEx = append(finalEx, p)
 			continue
 		}
@@ -116,7 +119,8 @@ func (c CompiledRules) Replacement() string { return c.repl }
 
 func (c CompiledRules) ShouldExclude(p string) bool {
 	p = normPath(p)
-	if p == ".git-copy" || strings.HasPrefix(p, ".git-copy/") {
+	if p == ".git-copy" || strings.HasPrefix(p, ".git-copy/") ||
+		p == ".claude" || strings.HasPrefix(p, ".claude/") {
 		return true
 	}
 	for _, pat := range c.exclude {

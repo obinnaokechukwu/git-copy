@@ -15,6 +15,9 @@ func TestRules_ExcludeAndOptIn(t *testing.T) {
 	if !r.ShouldExclude(".git-copy/config.json") {
 		t.Fatalf("expected .git-copy to be excluded")
 	}
+	if !r.ShouldExclude(".claude/session.json") {
+		t.Fatalf("expected .claude to be excluded")
+	}
 	if r.ShouldExclude(".env") {
 		t.Fatalf("expected .env to be opt-in included")
 	}

@@ -43,7 +43,8 @@ func ValidateScrubbedRepo(ctx context.Context, bareRepoPath string, privateUsern
 			if p == "" {
 				continue
 			}
-			if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" {
+			if strings.HasPrefix(p, ".git-copy/") || p == ".git-copy" ||
+				strings.HasPrefix(p, ".claude/") || p == ".claude" {
 				return ValidationError{Reason: "found forbidden path in target repo: " + p}
 			}
 			for _, bad := range forbiddenPaths {
