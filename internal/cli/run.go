@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/obinnaokechukwu/git-copy/internal/config"
 )
 
 func Run(args []string) error {
@@ -70,6 +73,8 @@ func Run(args []string) error {
 		return cmdInstall(*uninstall)
 	case "uninstall":
 		return cmdInstall(true)
+	case "show-defaults":
+		return cmdShowDefaults()
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -96,6 +101,26 @@ Daemon:
   %s install [--uninstall]
   %s uninstall
 
-`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
+Info:
+  %s show-defaults
+
+`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
+}
+
+func cmdShowDefaults() error {
+	fmt.Println("Default exclusions (add to opt_in in config.json to override):")
+	fmt.Println("")
+	fmt.Println("Environment files:")
+	fmt.Printf("  %s\n", strings.Join(config.DefaultExcludedEnvFiles, ", "))
+	fmt.Println("")
+	fmt.Println("Secrets and credentials:")
+	fmt.Printf("  %s\n", strings.Join(config.DefaultExcludedSecrets, ", "))
+	fmt.Println("")
+	fmt.Println("Always excluded:")
+	fmt.Println("  .git-copy/**, CLAUDE.md")
+	fmt.Println("")
+	fmt.Println("To include a pattern, add it to defaults.opt_in in .git-copy/config.json:")
+	fmt.Println(`  "opt_in": [".envrc", ".env.development"]`)
+	return nil
 }
 

@@ -81,6 +81,12 @@ func cmdInit(repoFlag string) error {
 	}
 
 	fmt.Println("Initialized git-copy configuration.")
+	fmt.Println("")
+	fmt.Println("Default exclusions (add to opt_in to override):")
+	fmt.Printf("  Environment files: %s\n", strings.Join(config.DefaultExcludedEnvFiles, ", "))
+	fmt.Printf("  Secrets/creds:     %s\n", strings.Join(config.DefaultExcludedSecrets, ", "))
+	fmt.Println("  Always excluded:   .git-copy/**, CLAUDE.md")
+	fmt.Println("")
 	fmt.Println("Running initial sync...")
 	results, err := sync.SyncRepo(context.Background(), repoPath, cfg, target.Label, sync.Options{Validate: true})
 	if err != nil {

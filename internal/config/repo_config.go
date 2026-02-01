@@ -49,17 +49,43 @@ type AuthRef struct {
 	BaseURL  string `json:"base_url,omitempty"`  // provider API base URL, if needed
 }
 
+// DefaultExcludedEnvFiles lists environment files excluded by default.
+// Users can override by adding patterns to opt_in.
+var DefaultExcludedEnvFiles = []string{
+	".env",
+	".envrc",
+	".env.local",
+	".env.*.local",
+	".env.development",
+	".env.test",
+	".env.staging",
+	".env.production",
+	".direnv/",
+}
+
+// DefaultExcludedSecrets lists secret/credential files excluded by default.
+// Users can override by adding patterns to opt_in.
+var DefaultExcludedSecrets = []string{
+	".secrets",
+	"*.secrets",
+	".npmrc",
+	".netrc",
+}
+
 func DefaultConfig(privateUsername, headBranch string) RepoConfig {
+	exclude := []string{
+		".git-copy/**",
+		"CLAUDE.md",
+	}
+	exclude = append(exclude, DefaultExcludedEnvFiles...)
+	exclude = append(exclude, DefaultExcludedSecrets...)
+
 	return RepoConfig{
 		Version:         RepoConfigVersion,
 		PrivateUsername: privateUsername,
 		HeadBranch:      headBranch,
 		Defaults: TargetDefaults{
-			Exclude: []string{
-				".git-copy/**",
-				"CLAUDE.md",
-				".env",
-			},
+			Exclude:               exclude,
 			OptIn:                 []string{},
 			ExtraReplacementPairs: map[string]string{},
 		},

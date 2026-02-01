@@ -54,3 +54,39 @@ func TestRepoConfig_ValidateRejectsMissingFields(t *testing.T) {
 		t.Fatalf("expected error for missing target repo_url/account/repo_name")
 	}
 }
+
+func TestDefaultConfig_ContainsExpectedExclusions(t *testing.T) {
+	cfg := DefaultConfig("test", "main")
+
+	// Build expected set from exported variables
+	expected := map[string]bool{
+		".git-copy/**": true,
+		"CLAUDE.md":    true,
+	}
+	for _, p := range DefaultExcludedEnvFiles {
+		expected[p] = true
+	}
+	for _, p := range DefaultExcludedSecrets {
+		expected[p] = true
+	}
+
+	// Verify all expected patterns are present
+	actual := make(map[string]bool)
+	for _, p := range cfg.Defaults.Exclude {
+		actual[p] = true
+	}
+
+	for p := range expected {
+		if !actual[p] {
+			t.Errorf("missing expected exclusion pattern: %q", p)
+		}
+	}
+
+	// Verify key patterns exist
+	keyPatterns := []string{".env", ".envrc", ".env.local", ".secrets", ".npmrc"}
+	for _, p := range keyPatterns {
+		if !actual[p] {
+			t.Errorf("missing key exclusion pattern: %q", p)
+		}
+	}
+}
