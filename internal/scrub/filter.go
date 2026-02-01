@@ -1,0 +1,594 @@
+package scrub
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+)
+
+type ExportFilter struct {
+	rules CompiledRules
+
+	// markMap maps an old mark string like ":12" to a new mark string (or "" for none).
+	markMap map[string]string
+
+	// refRewriteMap detects collisions: original ref -> scrubbed ref.
+	refRewriteMap map[string]string
+	refReverseMap map[string]string
+}
+
+func NewExportFilter(r CompiledRules) *ExportFilter {
+	return &ExportFilter{
+		rules:         r,
+		markMap:       map[string]string{},
+		refRewriteMap: map[string]string{},
+		refReverseMap: map[string]string{},
+	}
+}
+
+func (f *ExportFilter) Filter(r io.Reader, w io.Writer) error {
+	br := bufio.NewReader(r)
+	bw := bufio.NewWriter(w)
+	defer bw.Flush()
+
+	for {
+		line, err := br.ReadString('\n')
+		if err == io.EOF && line == "" {
+			break
+		}
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		switch {
+		case line == "blob\n":
+			if err := f.handleBlob(br, bw); err != nil {
+				return err
+			}
+		case strings.HasPrefix(line, "commit "):
+			if err := f.handleCommit(line, br, bw); err != nil {
+				return err
+			}
+		case strings.HasPrefix(line, "tag "):
+			if err := f.handleTag(line, br, bw); err != nil {
+				return err
+			}
+		case strings.HasPrefix(line, "reset "):
+			if err := f.handleReset(line, br, bw); err != nil {
+				return err
+			}
+		default:
+			// progress/checkpoint/etc.
+			_, _ = bw.WriteString(line)
+		}
+
+		if err == io.EOF {
+			break
+		}
+	}
+	return nil
+}
+
+func (f *ExportFilter) handleBlob(br *bufio.Reader, bw *bufio.Writer) error {
+	_, _ = bw.WriteString("blob\n")
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(line, "data ") {
+			n, err := parseDataLen(line)
+			if err != nil {
+				return err
+			}
+			b := make([]byte, n)
+			if _, err := io.ReadFull(br, b); err != nil {
+				return err
+			}
+			// Consume trailing newline after data payload
+			if _, err := br.ReadByte(); err != nil {
+				return err
+			}
+			nb := f.rewriteBytes(b)
+			_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(nb)))
+			if _, err := bw.Write(nb); err != nil {
+				return err
+			}
+			_, _ = bw.WriteString("\n")
+			return nil
+		}
+		// pass-through metadata (mark, original-oid)
+		_, _ = bw.WriteString(line)
+	}
+}
+
+func (f *ExportFilter) handleCommit(firstLine string, br *bufio.Reader, bw *bufio.Writer) error {
+	origRef := strings.TrimSpace(strings.TrimPrefix(firstLine, "commit "))
+	newRef := f.rewriteRef(origRef)
+	if err := f.checkRefCollision(origRef, newRef); err != nil {
+		return err
+	}
+
+	// Parse commit header
+	var (
+		oldMark       string
+		parents       []string
+		merges        []string
+		authorLine    string
+		committerLine string
+		encodingLine  string
+		origOidLine   string
+		message       []byte
+		otherHeader   []string
+		ops           []string
+	)
+
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case strings.HasPrefix(line, "mark "):
+			oldMark = strings.TrimSpace(strings.TrimPrefix(line, "mark "))
+			f.markMap[oldMark] = oldMark // default mapping unless skipped
+		case strings.HasPrefix(line, "original-oid "):
+			origOidLine = line
+		case strings.HasPrefix(line, "author "):
+			authorLine = line
+		case strings.HasPrefix(line, "committer "):
+			committerLine = line
+		case strings.HasPrefix(line, "encoding "):
+			encodingLine = line
+		case strings.HasPrefix(line, "from "):
+			p := strings.TrimSpace(strings.TrimPrefix(line, "from "))
+			parents = append(parents, p)
+		case strings.HasPrefix(line, "merge "):
+			m := strings.TrimSpace(strings.TrimPrefix(line, "merge "))
+			merges = append(merges, m)
+		case strings.HasPrefix(line, "data "):
+			n, err := parseDataLen(line)
+			if err != nil {
+				return err
+			}
+			b := make([]byte, n)
+			if _, err := io.ReadFull(br, b); err != nil {
+				return err
+			}
+			// trailing newline
+			if _, err := br.ReadByte(); err != nil {
+				return err
+			}
+			message = f.rewriteBytes(b)
+		case line == "\n":
+			// commit with no file ops
+			break
+		default:
+			// Some exporters include "commit refs/..." followed by other headers; keep them.
+			otherHeader = append(otherHeader, line)
+		}
+
+		// After data, we continue reading until blank line ends record; but ops can appear.
+		if line == "\n" {
+			break
+		}
+
+		// After message data, next lines are file ops until blank line. We'll detect by peeking at next line if we already read message.
+		if message != nil {
+			for {
+				l2, err := br.ReadString('\n')
+				if err != nil {
+					return err
+				}
+				if l2 == "\n" {
+					// end of commit record
+					break
+				}
+				ops = append(ops, l2)
+			}
+			break
+		}
+	}
+
+	// Determine parent mark (only single-parent commits are eligible for skipping)
+	parentResolved := ""
+	if len(parents) == 1 {
+		parentResolved = f.resolveCommitRef(parents[0])
+	}
+
+	// Rewrite and filter file ops
+	filteredOps, keptOps, err := f.filterOps(ops)
+	if err != nil {
+		return err
+	}
+
+	// Skip if no ops left and not a merge commit
+	if keptOps == 0 && len(merges) == 0 {
+		if oldMark != "" {
+			f.markMap[oldMark] = parentResolved
+		}
+		// Emit a reset so the branch/tip moves to the parent (or deletes if none)
+		_, _ = bw.WriteString("reset " + newRef + "\n")
+		if parentResolved != "" {
+			_, _ = bw.WriteString("from " + parentResolved + "\n")
+		}
+		_, _ = bw.WriteString("\n")
+		return nil
+	}
+
+	// Emit commit record
+	_, _ = bw.WriteString("commit " + newRef + "\n")
+	if oldMark != "" {
+		_, _ = bw.WriteString("mark " + oldMark + "\n")
+	}
+	if origOidLine != "" {
+		_, _ = bw.WriteString(origOidLine)
+	}
+
+	// Rewrite author/committer: overwrite identity while preserving timestamp
+	if authorLine != "" {
+		_, _ = bw.WriteString(rewriteIdentityLine("author", authorLine, f.rules))
+	}
+	if committerLine != "" {
+		_, _ = bw.WriteString(rewriteIdentityLine("committer", committerLine, f.rules))
+	}
+	if encodingLine != "" {
+		_, _ = bw.WriteString(encodingLine)
+	}
+	// Rewrite parents
+	if len(parents) == 1 {
+		p := f.resolveCommitRef(parents[0])
+		if p != "" {
+			_, _ = bw.WriteString("from " + p + "\n")
+		}
+	} else if len(parents) > 1 {
+		// Shouldn't happen; fast-export uses one "from" plus merges.
+		for _, p0 := range parents {
+			p := f.resolveCommitRef(p0)
+			if p != "" {
+				_, _ = bw.WriteString("from " + p + "\n")
+				break
+			}
+		}
+	}
+	for _, m0 := range merges {
+		m := f.resolveCommitRef(m0)
+		if m == "" {
+			continue
+		}
+		_, _ = bw.WriteString("merge " + m + "\n")
+	}
+
+	for _, h := range otherHeader {
+		_, _ = bw.WriteString(h)
+	}
+
+	// Commit message
+	_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(message)))
+	if _, err := bw.Write(message); err != nil {
+		return err
+	}
+	_, _ = bw.WriteString("\n")
+
+	for _, op := range filteredOps {
+		_, _ = bw.WriteString(op)
+	}
+	_, _ = bw.WriteString("\n")
+	return nil
+}
+
+func (f *ExportFilter) handleTag(firstLine string, br *bufio.Reader, bw *bufio.Writer) error {
+	origRef := strings.TrimSpace(strings.TrimPrefix(firstLine, "tag "))
+	newRef := f.rewriteRef(origRef)
+	if err := f.checkRefCollision(origRef, newRef); err != nil {
+		return err
+	}
+	_, _ = bw.WriteString("tag " + newRef + "\n")
+
+	var taggerLine, fromLine, markLine, origOidLine string
+	var message []byte
+	var extra []string
+
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		switch {
+		case strings.HasPrefix(line, "from "):
+			fromLine = line
+		case strings.HasPrefix(line, "mark "):
+			markLine = line
+		case strings.HasPrefix(line, "original-oid "):
+			origOidLine = line
+		case strings.HasPrefix(line, "tagger "):
+			taggerLine = line
+		case strings.HasPrefix(line, "data "):
+			n, err := parseDataLen(line)
+			if err != nil {
+				return err
+			}
+			b := make([]byte, n)
+			if _, err := io.ReadFull(br, b); err != nil {
+				return err
+			}
+			if _, err := br.ReadByte(); err != nil {
+				return err
+			}
+			message = f.rewriteBytes(b)
+		case line == "\n":
+			// end
+			goto EMIT
+		default:
+			extra = append(extra, line)
+		}
+	}
+
+EMIT:
+	if origOidLine != "" {
+		_, _ = bw.WriteString(origOidLine)
+	}
+	if fromLine != "" {
+		// rewrite from ref if it uses marks
+		p := strings.TrimSpace(strings.TrimPrefix(fromLine, "from "))
+		p2 := f.resolveCommitRef(p)
+		if p2 != "" {
+			_, _ = bw.WriteString("from " + p2 + "\n")
+		}
+	}
+	if taggerLine != "" {
+		// overwrite identity
+		_, _ = bw.WriteString(rewriteIdentityLine("tagger", taggerLine, f.rules))
+	}
+	if markLine != "" {
+		_, _ = bw.WriteString(markLine)
+	}
+	for _, l := range extra {
+		_, _ = bw.WriteString(l)
+	}
+	if message != nil {
+		_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(message)))
+		if _, err := bw.Write(message); err != nil {
+			return err
+		}
+		_, _ = bw.WriteString("\n")
+	}
+	_, _ = bw.WriteString("\n")
+	return nil
+}
+
+func (f *ExportFilter) handleReset(firstLine string, br *bufio.Reader, bw *bufio.Writer) error {
+	origRef := strings.TrimSpace(strings.TrimPrefix(firstLine, "reset "))
+	newRef := f.rewriteRef(origRef)
+	if err := f.checkRefCollision(origRef, newRef); err != nil {
+		return err
+	}
+	_, _ = bw.WriteString("reset " + newRef + "\n")
+
+	// reset may be followed by "from <ref>" or blank line
+	line, err := br.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if line == "\n" {
+		_, _ = bw.WriteString("\n")
+		return nil
+	}
+	if strings.HasPrefix(line, "from ") {
+		p := strings.TrimSpace(strings.TrimPrefix(line, "from "))
+		p2 := f.resolveCommitRef(p)
+		if p2 != "" {
+			_, _ = bw.WriteString("from " + p2 + "\n")
+		}
+		// consume blank line
+		blank, err := br.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		if blank != "\n" {
+			// unexpected but keep
+			_, _ = bw.WriteString(blank)
+		} else {
+			_, _ = bw.WriteString("\n")
+		}
+		return nil
+	}
+	// unknown; write it and continue until blank
+	_, _ = bw.WriteString(line)
+	for {
+		l, err := br.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		_, _ = bw.WriteString(l)
+		if l == "\n" {
+			return nil
+		}
+	}
+}
+
+func (f *ExportFilter) filterOps(ops []string) ([]string, int, error) {
+	out := make([]string, 0, len(ops))
+	kept := 0
+
+	for _, op := range ops {
+		opTrim := strings.TrimRight(op, "\n")
+		if opTrim == "" {
+			continue
+		}
+		if opTrim == "deleteall" {
+			out = append(out, "deleteall\n")
+			kept++
+			continue
+		}
+		switch {
+		case strings.HasPrefix(opTrim, "M "):
+			mode, dataref, path, ok := parseM(opTrim)
+			if !ok {
+				out = append(out, op)
+				kept++
+				continue
+			}
+			if f.rules.ShouldExclude(path) {
+				continue
+			}
+			newPath := f.rules.RewriteString(path)
+			newPath = strings.TrimPrefix(newPath, "./")
+			if f.rules.ShouldExclude(newPath) {
+				continue
+			}
+			out = append(out, fmt.Sprintf("M %s %s %s\n", mode, dataref, newPath))
+			kept++
+		case strings.HasPrefix(opTrim, "D "):
+			path := strings.TrimSpace(strings.TrimPrefix(opTrim, "D "))
+			if f.rules.ShouldExclude(path) {
+				continue
+			}
+			newPath := f.rules.RewriteString(path)
+			if f.rules.ShouldExclude(newPath) {
+				continue
+			}
+			out = append(out, "D "+newPath+"\n")
+			kept++
+		case strings.HasPrefix(opTrim, "R "):
+			oldP, newP, ok := parseTwoPaths(opTrim, "R")
+			if !ok {
+				out = append(out, op)
+				kept++
+				continue
+			}
+			// If source excluded but dest included, rename cannot be represented safely (fast-import needs source present).
+			if f.rules.ShouldExclude(oldP) && !f.rules.ShouldExclude(newP) {
+				return nil, 0, fmt.Errorf("unsafe rename from excluded path %q to included path %q; add an exclusion for the destination or avoid renaming excluded files", oldP, newP)
+			}
+			if f.rules.ShouldExclude(newP) {
+				continue
+			}
+			old2 := f.rules.RewriteString(oldP)
+			new2 := f.rules.RewriteString(newP)
+			out = append(out, fmt.Sprintf("R %s %s\n", old2, new2))
+			kept++
+		case strings.HasPrefix(opTrim, "C "):
+			oldP, newP, ok := parseTwoPaths(opTrim, "C")
+			if !ok {
+				out = append(out, op)
+				kept++
+				continue
+			}
+			if f.rules.ShouldExclude(oldP) && !f.rules.ShouldExclude(newP) {
+				return nil, 0, fmt.Errorf("unsafe copy from excluded path %q to included path %q; add an exclusion for the destination or avoid copying excluded files", oldP, newP)
+			}
+			if f.rules.ShouldExclude(newP) {
+				continue
+			}
+			old2 := f.rules.RewriteString(oldP)
+			new2 := f.rules.RewriteString(newP)
+			out = append(out, fmt.Sprintf("C %s %s\n", old2, new2))
+			kept++
+		default:
+			// Unknown operation; keep but scrub obvious usernames in the line
+			out = append(out, f.rules.RewriteString(op))
+			kept++
+		}
+	}
+	return out, kept, nil
+}
+
+func (f *ExportFilter) resolveCommitRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, ":") {
+		if v, ok := f.markMap[ref]; ok {
+			return v
+		}
+		return ref
+	}
+	// sha or refname; return as-is
+	return ref
+}
+
+func (f *ExportFilter) rewriteBytes(b []byte) []byte {
+	// username replacement
+	out := bytes.ReplaceAll(b, []byte(f.rules.Private()), []byte(f.rules.Replacement()))
+	// extra replacements
+	for _, kv := range f.rules.extra {
+		out = bytes.ReplaceAll(out, []byte(kv[0]), []byte(kv[1]))
+	}
+	return out
+}
+
+func rewriteIdentityLine(kind, line string, rules CompiledRules) string {
+	// line format: "<kind> Name <email> timestamp tz\n"
+	// We keep timestamp+tz from original, but overwrite name/email.
+	rest := strings.TrimSpace(strings.TrimPrefix(line, kind+" "))
+	// Find ">" that ends email
+	i := strings.LastIndex(rest, ">")
+	if i == -1 {
+		// fallback: just rewrite string
+		return kind + " " + rules.RewriteString(rest) + "\n"
+	}
+	after := strings.TrimSpace(rest[i+1:]) // timestamp tz
+	name := rules.PublicAuthorName()
+	email := rules.PublicAuthorEmail()
+	return fmt.Sprintf("%s %s <%s> %s\n", kind, name, email, after)
+}
+
+func parseDataLen(line string) (int, error) {
+	s := strings.TrimSpace(strings.TrimPrefix(line, "data "))
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid data length: %q", line)
+	}
+	return n, nil
+}
+
+func parseM(line string) (mode, dataref, path string, ok bool) {
+	// line: "M <mode> <dataref> <path>"
+	// Find first space after "M "
+	rest := strings.TrimPrefix(line, "M ")
+	i1 := strings.IndexByte(rest, ' ')
+	if i1 < 0 {
+		return "", "", "", false
+	}
+	mode = rest[:i1]
+	rest2 := rest[i1+1:]
+	i2 := strings.IndexByte(rest2, ' ')
+	if i2 < 0 {
+		return "", "", "", false
+	}
+	dataref = rest2[:i2]
+	path = strings.TrimSpace(rest2[i2+1:])
+	return mode, dataref, path, true
+}
+
+func parseTwoPaths(line, prefix string) (a, b string, ok bool) {
+	// Very common case: paths without spaces. If paths contain spaces, fast-import format becomes ambiguous.
+	parts := strings.Fields(line)
+	if len(parts) != 3 || parts[0] != prefix {
+		return "", "", false
+	}
+	return parts[1], parts[2], true
+}
+
+func (f *ExportFilter) rewriteRef(ref string) string {
+	// ref is a token like "refs/heads/main" or "refs/tags/v1.0"
+	return f.rules.RewriteString(ref)
+}
+
+func (f *ExportFilter) checkRefCollision(orig, rewritten string) error {
+	if prev, ok := f.refRewriteMap[orig]; ok {
+		if prev != rewritten {
+			return fmt.Errorf("internal ref rewrite mismatch for %q", orig)
+		}
+		return nil
+	}
+	f.refRewriteMap[orig] = rewritten
+	if back, ok := f.refReverseMap[rewritten]; ok && back != orig {
+		return fmt.Errorf("ref name collision after scrubbing: %q and %q both become %q", back, orig, rewritten)
+	}
+	f.refReverseMap[rewritten] = orig
+	return nil
+}
