@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"git-copy/internal/config"
-	gitx "git-copy/internal/git"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 // LoadRepoConfigFromAnyBranch loads .git-copy/config.json from:

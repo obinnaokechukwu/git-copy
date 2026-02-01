@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	gitx "git-copy/internal/git"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 func commitConfigOnHeadBranch(repoPath, headBranch, message string) error {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	gitx "git-copy/internal/git"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 type ValidationError struct {

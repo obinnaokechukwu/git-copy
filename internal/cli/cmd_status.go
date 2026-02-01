@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"git-copy/internal/repo"
-	"git-copy/internal/state"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/state"
 )
 
 func cmdStatus(repoFlag string) error {

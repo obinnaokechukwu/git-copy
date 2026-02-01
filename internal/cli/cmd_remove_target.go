@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"git-copy/internal/config"
-	"git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
 )
 
 func cmdRemoveTarget(repoFlag, label string) error {

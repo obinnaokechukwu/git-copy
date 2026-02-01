@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"git-copy/internal/config"
-	"git-copy/internal/repo"
-	"git-copy/internal/sync"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/sync"
 )
 
 func cmdAddTarget(repoFlag string) error {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	gitx "git-copy/internal/git"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 func initRepoForFilter(t *testing.T) string {

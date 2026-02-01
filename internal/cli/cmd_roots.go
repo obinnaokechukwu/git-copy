@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
 )
 
 func cmdRoots(args []string) error {

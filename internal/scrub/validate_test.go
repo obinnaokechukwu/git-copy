@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	gitx "git-copy/internal/git"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 func initRepo(t *testing.T, content string) string {

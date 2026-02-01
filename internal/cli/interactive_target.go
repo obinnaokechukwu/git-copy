@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"git-copy/internal/config"
-	"git-copy/internal/provider"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/provider"
 )
 
 func interactiveTargetSetup(cfg config.RepoConfig) (config.Target, error) {

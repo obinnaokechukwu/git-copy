@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"git-copy/internal/config"
-	"git-copy/internal/notify"
-	"git-copy/internal/repo"
-	syncer "git-copy/internal/sync"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/notify"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
+	syncer "github.com/obinnaokechukwu/git-copy/internal/sync"
 )
 
 type Server struct {

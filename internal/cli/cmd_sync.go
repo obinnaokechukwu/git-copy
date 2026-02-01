@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"git-copy/internal/repo"
-	"git-copy/internal/sync"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/sync"
 )
 
 func cmdSync(repoFlag, target string) error {

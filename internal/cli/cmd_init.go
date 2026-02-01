@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git-copy/internal/config"
-	gitx "git-copy/internal/git"
-	"git-copy/internal/repo"
-	"git-copy/internal/sync"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/sync"
 )
 
 func cmdInit(repoFlag string) error {

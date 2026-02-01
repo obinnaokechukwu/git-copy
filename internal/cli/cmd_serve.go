@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"git-copy/internal/config"
-	"git-copy/internal/daemon"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	"github.com/obinnaokechukwu/git-copy/internal/daemon"
 )
 
 func cmdServe() error {

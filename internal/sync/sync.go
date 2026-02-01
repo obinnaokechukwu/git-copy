@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"git-copy/internal/config"
-	gitx "git-copy/internal/git"
-	"git-copy/internal/scrub"
-	"git-copy/internal/state"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
+	"github.com/obinnaokechukwu/git-copy/internal/scrub"
+	"github.com/obinnaokechukwu/git-copy/internal/state"
 )
 
 type Options struct {

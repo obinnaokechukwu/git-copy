@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"git-copy/internal/repo"
+	"github.com/obinnaokechukwu/git-copy/internal/repo"
 )
 
 func cmdListTargets(repoFlag string) error {

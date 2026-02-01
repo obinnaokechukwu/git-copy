@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"git-copy/internal/cli"
+	"github.com/obinnaokechukwu/git-copy/internal/cli"
 )
 
 func main() {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-copy/internal/config"
-	gitx "git-copy/internal/git"
+	"github.com/obinnaokechukwu/git-copy/internal/config"
+	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
 )
 
 func initGitRepoForTest(t *testing.T) string {
