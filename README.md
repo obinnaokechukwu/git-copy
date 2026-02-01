@@ -40,7 +40,7 @@ cd /path/to/your/private/repo
 git-copy init
 ```
 
-This creates a `.git-copy/config.json` file with your scrubbing rules.
+This creates a `.git-copy/config.json` file with your scrubbing rules. The `private_username` is automatically detected from your origin remote URL (e.g., `github.com/your-username/repo` → `your-username`).
 
 ### 2. Add a Sync Target
 
@@ -154,9 +154,19 @@ git-copy roots list
 # List discovered repositories
 git-copy repos
 
-# Start the daemon
+# Start the daemon manually
 git-copy serve
+
+# Install daemon to run at system startup (Linux/macOS)
+git-copy install
+
+# Uninstall daemon service
+git-copy uninstall
 ```
+
+The `install` command automatically sets up:
+- **Linux**: systemd user service (`~/.config/systemd/user/git-copy.service`)
+- **macOS**: launchd agent (`~/Library/LaunchAgents/com.obinnaokechukwu.git-copy.plist`)
 
 ## How It Works
 
