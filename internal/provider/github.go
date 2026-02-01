@@ -44,10 +44,10 @@ func ghAvailable() bool {
 	return err == nil
 }
 
-// ghTokenForAccount retrieves the gh auth token for a specific account.
+// GHTokenForAccount retrieves the gh auth token for a specific account.
 // This enables multi-account support where the user has authenticated
 // multiple GitHub accounts with gh auth login.
-func ghTokenForAccount(account string) string {
+func GHTokenForAccount(account string) string {
 	cmd := exec.Command("gh", "auth", "token", "--user", account)
 	out, err := cmd.Output()
 	if err != nil {
@@ -60,7 +60,7 @@ func ghTokenForAccount(account string) string {
 // environment variable set for the target account.
 func ghCommandForAccount(ctx context.Context, account string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	if token := ghTokenForAccount(account); token != "" {
+	if token := GHTokenForAccount(account); token != "" {
 		cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
 	}
 	return cmd

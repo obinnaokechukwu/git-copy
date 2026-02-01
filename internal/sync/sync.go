@@ -7,13 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/obinnaokechukwu/git-copy/internal/config"
 	gitx "github.com/obinnaokechukwu/git-copy/internal/git"
+	"github.com/obinnaokechukwu/git-copy/internal/provider"
 	"github.com/obinnaokechukwu/git-copy/internal/scrub"
 	"github.com/obinnaokechukwu/git-copy/internal/state"
 )
@@ -178,21 +178,11 @@ func getPushEnv(t config.Target) []string {
 		return nil
 	}
 	// Try to get token for this specific account using gh CLI
-	token := ghTokenForAccount(t.Account)
+	token := provider.GHTokenForAccount(t.Account)
 	if token == "" {
 		return nil
 	}
 	return []string{"GH_TOKEN=" + token}
-}
-
-// ghTokenForAccount retrieves the gh auth token for a specific account.
-func ghTokenForAccount(account string) string {
-	cmd := exec.Command("gh", "auth", "token", "--user", account)
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 func exportFilterImport(ctx context.Context, srcRepo, dstBare string, rules scrub.CompiledRules) error {

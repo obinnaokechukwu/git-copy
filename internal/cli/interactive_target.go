@@ -138,7 +138,21 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 	case "custom (existing repo)":
 		provName = "custom"
 		auth = config.AuthRef{Method: "none"}
-		repoURL, _ = promptString("Existing target repo git URL (SSH or HTTPS)", "", true)
+		// Try to auto-generate URL for known providers
+		customHost, _ := promptSelect("Where is the existing repo hosted?", []string{
+			"github.com", "gitlab.com", "other",
+		}, 0)
+		if customHost == "other" {
+			repoURL, _ = promptString("Existing target repo git URL (SSH or HTTPS)", "", true)
+		} else {
+			urlType, _ := promptSelect("Git URL type:", []string{"ssh (recommended)", "https"}, 0)
+			if strings.HasPrefix(urlType, "https") {
+				repoURL = fmt.Sprintf("https://%s/%s/%s.git", customHost, account, repoName)
+			} else {
+				repoURL = fmt.Sprintf("git@%s:%s/%s.git", customHost, account, repoName)
+			}
+			fmt.Printf("Using URL: %s\n", repoURL)
+		}
 	default:
 		return config.Target{}, provider.ErrUnsupportedProvider(provChoice)
 	}
