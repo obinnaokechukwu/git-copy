@@ -22,15 +22,6 @@ func cmdInit(repoFlag string) error {
 		return err
 	}
 
-	// Check for clean worktree EARLY, before any remote operations
-	clean, err := gitx.HasCleanWorktree(repoPath)
-	if err != nil {
-		return err
-	}
-	if !clean {
-		return fmt.Errorf("working tree is not clean; commit or stash changes before running git-copy init")
-	}
-
 	// Refuse if already initialized
 	if _, err := os.Stat(filepath.Join(repoPath, ".git-copy", "config.json")); err == nil {
 		return fmt.Errorf("git-copy already initialized in this repo (found .git-copy/config.json); use add-target instead")
@@ -58,6 +49,17 @@ func cmdInit(repoFlag string) error {
 	}
 	privateUser = strings.TrimSpace(privateUser)
 	headBranch = strings.TrimSpace(headBranch)
+
+	// Only check for clean worktree if we need to switch branches
+	if curBranch != "" && curBranch != headBranch {
+		clean, err := gitx.HasCleanWorktree(repoPath)
+		if err != nil {
+			return err
+		}
+		if !clean {
+			return fmt.Errorf("working tree is not clean; commit or stash changes before running git-copy init (branch switch required: %s -> %s)", curBranch, headBranch)
+		}
+	}
 
 	cfg := config.DefaultConfig(privateUser, headBranch)
 

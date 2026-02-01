@@ -84,16 +84,18 @@ func getRepoDescription(repoPath string) string {
 }
 
 func commitConfigOnHeadBranch(repoPath, headBranch, message string) error {
-	clean, err := gitx.HasCleanWorktree(repoPath)
-	if err != nil {
-		return err
-	}
-	if !clean {
-		return fmt.Errorf("working tree is not clean; commit or stash changes before running this command")
-	}
-
 	cur, _ := gitx.CurrentBranch(repoPath)
-	if cur != "" && cur != headBranch {
+	needsBranchSwitch := cur != "" && cur != headBranch
+
+	// Only require clean worktree if we need to switch branches
+	if needsBranchSwitch {
+		clean, err := gitx.HasCleanWorktree(repoPath)
+		if err != nil {
+			return err
+		}
+		if !clean {
+			return fmt.Errorf("working tree is not clean; commit or stash changes before running this command (branch switch required: %s -> %s)", cur, headBranch)
+		}
 		if _, err := gitx.Run(nil, repoPath, "checkout", headBranch); err != nil {
 			return err
 		}

@@ -23,13 +23,16 @@ func cmdAddTarget(repoFlag string) error {
 		return fmt.Errorf("repo is not initialized for git-copy: %w", err)
 	}
 
-	// Check for clean worktree EARLY, before any remote operations
-	clean, err := gitx.HasCleanWorktree(repoPath)
-	if err != nil {
-		return err
-	}
-	if !clean {
-		return fmt.Errorf("working tree is not clean; commit or stash changes before running git-copy add-target")
+	// Only check for clean worktree if we need to switch branches
+	curBranch, _ := gitx.CurrentBranch(repoPath)
+	if curBranch != "" && curBranch != cfg.HeadBranch {
+		clean, err := gitx.HasCleanWorktree(repoPath)
+		if err != nil {
+			return err
+		}
+		if !clean {
+			return fmt.Errorf("working tree is not clean; commit or stash changes before running git-copy add-target (branch switch required: %s -> %s)", curBranch, cfg.HeadBranch)
+		}
 	}
 
 	target, err := interactiveTargetSetup(cfg, repoPath)
