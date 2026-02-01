@@ -48,11 +48,8 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		return config.Target{}, err
 	}
 
-	// Get description, try to fetch from current repo if using gh
-	defaultDesc := ""
-	if ghAvailable() {
-		defaultDesc = getRepoDescription(repoPath)
-	}
+	// Get description, try to fetch from current repo (works with gh cli if available)
+	defaultDesc := getRepoDescription(repoPath)
 	description, _ := promptString("Repo description (optional)", defaultDesc, false)
 
 	var urls provider.RepoURLs
