@@ -83,6 +83,24 @@ func getRepoDescription(repoPath string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// getRepoTopics gets the repo topics/tags using gh cli.
+func getRepoTopics(repoPath string) []string {
+	cmd := exec.Command("gh", "repo", "view", "--json", "repositoryTopics", "-q", ".repositoryTopics[].name")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var topics []string
+	for _, line := range lines {
+		if t := strings.TrimSpace(line); t != "" {
+			topics = append(topics, t)
+		}
+	}
+	return topics
+}
+
 func commitConfigOnHeadBranch(repoPath, headBranch, message string) error {
 	cur, _ := gitx.CurrentBranch(repoPath)
 	needsBranchSwitch := cur != "" && cur != headBranch

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -55,6 +56,17 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 	defaultDesc := getRepoDescription(repoPath)
 	description, _ := promptString("Repo description (optional)", defaultDesc, false)
 
+	// Get topics/tags, try to fetch from current repo
+	defaultTopics := getRepoTopics(repoPath)
+	defaultTopicsStr := strings.Join(defaultTopics, ", ")
+	topicsStr, _ := promptString("Repo topics/tags (comma-separated, optional)", defaultTopicsStr, false)
+	var topics []string
+	for _, t := range strings.Split(topicsStr, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			topics = append(topics, t)
+		}
+	}
+
 	var urls provider.RepoURLs
 	var repoURL string
 	var auth config.AuthRef
@@ -98,6 +110,12 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		}
 		urls = urls2
 		auth = config.AuthRef{Method: method, TokenEnv: tokenEnv}
+		// Set topics if any were specified
+		if len(topics) > 0 {
+			if err := setGitHubRepoTopics(ctx, account, repoName, topics); err != nil {
+				fmt.Printf("Warning: failed to set topics: %v\n", err)
+			}
+		}
 	case "gitlab":
 		provName = "gitlab"
 		baseURL, _ := promptString("GitLab base URL", "https://gitlab.com", true)
@@ -203,6 +221,8 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		Account:            account,
 		RepoName:           repoName,
 		RepoURL:            repoURL,
+		Description:        description,
+		Topics:             topics,
 		Replacement:        replacement,
 		PublicAuthorName:   pubName,
 		PublicAuthorEmail:  pubEmail,
@@ -217,4 +237,27 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 func ghAvailable() bool {
 	_, err := exec.LookPath("gh")
 	return err == nil
+}
+
+// setGitHubRepoTopics sets topics on a GitHub repo using gh CLI.
+func setGitHubRepoTopics(ctx context.Context, account, repoName string, topics []string) error {
+	if len(topics) == 0 {
+		return nil
+	}
+	full := fmt.Sprintf("%s/%s", account, repoName)
+	args := []string{"repo", "edit", full}
+	for _, t := range topics {
+		args = append(args, "--add-topic", t)
+	}
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	// Use correct token for multi-account
+	if token := provider.GHTokenForAccount(account); token != "" {
+		cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gh repo edit failed: %w (%s)", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }

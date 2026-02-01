@@ -31,6 +31,8 @@ type Target struct {
 	Account            string   `json:"account"`
 	RepoName           string   `json:"repo_name"`
 	RepoURL            string   `json:"repo_url"`
+	Description        string   `json:"description,omitempty"`
+	Topics             []string `json:"topics,omitempty"`
 	Replacement        string   `json:"replacement,omitempty"`
 	PublicAuthorName   string   `json:"public_author_name,omitempty"`
 	PublicAuthorEmail  string   `json:"public_author_email,omitempty"`
