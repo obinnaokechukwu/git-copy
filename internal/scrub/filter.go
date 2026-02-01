@@ -17,14 +17,29 @@ type ExportFilter struct {
 	// refRewriteMap detects collisions: original ref -> scrubbed ref.
 	refRewriteMap map[string]string
 	refReverseMap map[string]string
+
+	// replaceHistorySeenFiles tracks which replace_history_with_current files
+	// have been "seen" (first occurrence in the history).
+	replaceHistorySeenFiles map[string]bool
+	// replaceHistoryMarks maps normalized file paths to the synthetic blob marks
+	// for replace_history_with_current files.
+	replaceHistoryMarks map[string]string
+	// nextSyntheticMark is the counter for generating synthetic marks for
+	// replace_history_with_current blobs.
+	nextSyntheticMark int
+	// syntheticBlobsEmitted tracks whether we've emitted synthetic blobs yet.
+	syntheticBlobsEmitted bool
 }
 
 func NewExportFilter(r CompiledRules) *ExportFilter {
 	return &ExportFilter{
-		rules:         r,
-		markMap:       map[string]string{},
-		refRewriteMap: map[string]string{},
-		refReverseMap: map[string]string{},
+		rules:                   r,
+		markMap:                 map[string]string{},
+		refRewriteMap:           map[string]string{},
+		refReverseMap:           map[string]string{},
+		replaceHistorySeenFiles: map[string]bool{},
+		replaceHistoryMarks:     map[string]string{},
+		nextSyntheticMark:       900000000, // Start high to avoid collisions with normal marks
 	}
 }
 
@@ -48,6 +63,13 @@ func (f *ExportFilter) Filter(r io.Reader, w io.Writer) error {
 				return err
 			}
 		case strings.HasPrefix(line, "commit "):
+			// Emit synthetic blobs before the first commit
+			if !f.syntheticBlobsEmitted {
+				if err := f.emitSyntheticBlobs(bw); err != nil {
+					return err
+				}
+				f.syntheticBlobsEmitted = true
+			}
 			if err := f.handleCommit(line, br, bw); err != nil {
 				return err
 			}
@@ -67,6 +89,34 @@ func (f *ExportFilter) Filter(r io.Reader, w io.Writer) error {
 		if err == io.EOF {
 			break
 		}
+	}
+	return nil
+}
+
+// emitSyntheticBlobs emits blob records for all replace_history_with_current files
+// at the beginning of the stream, before any commits.
+func (f *ExportFilter) emitSyntheticBlobs(bw *bufio.Writer) error {
+	files := f.rules.GetReplaceHistoryFiles()
+	for _, filePath := range files {
+		content := f.rules.GetReplaceHistoryContent(filePath)
+		if content == nil {
+			// File doesn't exist in HEAD, skip
+			continue
+		}
+
+		// Generate a synthetic mark for this file
+		mark := fmt.Sprintf(":%d", f.nextSyntheticMark)
+		f.nextSyntheticMark++
+		f.replaceHistoryMarks[filePath] = mark
+
+		// Emit the blob
+		_, _ = bw.WriteString("blob\n")
+		_, _ = bw.WriteString("mark " + mark + "\n")
+		_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(content)))
+		if _, err := bw.Write(content); err != nil {
+			return err
+		}
+		_, _ = bw.WriteString("\n")
 	}
 	return nil
 }
@@ -417,6 +467,29 @@ func (f *ExportFilter) filterOps(ops []string) ([]string, int, error) {
 			if f.rules.ShouldExclude(newPath) {
 				continue
 			}
+
+			// Check if this is a replace_history_with_current file
+			normalizedPath := normPath(newPath)
+			if f.rules.ShouldReplaceHistory(normalizedPath) {
+				// Check if we have a synthetic mark for this file
+				syntheticMark, hasSyntheticMark := f.replaceHistoryMarks[normalizedPath]
+				if !hasSyntheticMark {
+					// File doesn't exist in HEAD, skip all occurrences
+					continue
+				}
+
+				if f.replaceHistorySeenFiles[normalizedPath] {
+					// Already seen this file, skip this M operation
+					// (all subsequent changes are dropped)
+					continue
+				}
+				// First occurrence: emit M with synthetic blob mark
+				f.replaceHistorySeenFiles[normalizedPath] = true
+				out = append(out, fmt.Sprintf("M %s %s %s\n", mode, syntheticMark, newPath))
+				kept++
+				continue
+			}
+
 			out = append(out, fmt.Sprintf("M %s %s %s\n", mode, dataref, newPath))
 			kept++
 		case strings.HasPrefix(opTrim, "D "):
@@ -428,6 +501,15 @@ func (f *ExportFilter) filterOps(ops []string) ([]string, int, error) {
 			if f.rules.ShouldExclude(newPath) {
 				continue
 			}
+
+			// Check if this is a replace_history_with_current file
+			normalizedPath := normPath(newPath)
+			if f.rules.ShouldReplaceHistory(normalizedPath) {
+				// Skip D operations for replace_history files - they should appear
+				// to exist unchanged throughout history
+				continue
+			}
+
 			out = append(out, "D "+newPath+"\n")
 			kept++
 		case strings.HasPrefix(opTrim, "R "):

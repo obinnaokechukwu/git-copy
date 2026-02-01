@@ -109,14 +109,31 @@ func syncTarget(ctx context.Context, repoPath, repoKey string, cfg config.RepoCo
 	optIn := append([]string{}, cfg.Defaults.OptIn...)
 	optIn = append(optIn, t.OptIn...)
 
+	// Merge replace_history_with_current from defaults and target
+	replaceHistoryWithCurrent := append([]string{}, cfg.Defaults.ReplaceHistoryWithCurrent...)
+	replaceHistoryWithCurrent = append(replaceHistoryWithCurrent, t.ReplaceHistoryWithCurrent...)
+
+	// Read HEAD content for replace_history_with_current files
+	replaceHistoryContent := make(map[string][]byte)
+	for _, filePath := range replaceHistoryWithCurrent {
+		content, err := readFileFromHEAD(ctx, repoPath, filePath)
+		if err != nil {
+			// File doesn't exist in HEAD, skip it
+			continue
+		}
+		replaceHistoryContent[filePath] = content
+	}
+
 	rules, err := scrub.Compile(scrub.Rules{
-		PrivateUsername:   cfg.PrivateUsername,
-		Replacement:       repl,
-		ExtraReplacements: cfg.Defaults.ExtraReplacementPairs,
-		ExcludePatterns:   exclude,
-		OptInPaths:        optIn,
-		PublicAuthorName:  t.PublicAuthorName,
-		PublicAuthorEmail: t.PublicAuthorEmail,
+		PrivateUsername:           cfg.PrivateUsername,
+		Replacement:               repl,
+		ExtraReplacements:         cfg.Defaults.ExtraReplacementPairs,
+		ExcludePatterns:           exclude,
+		OptInPaths:                optIn,
+		ReplaceHistoryWithCurrent: replaceHistoryWithCurrent,
+		ReplaceHistoryContent:     replaceHistoryContent,
+		PublicAuthorName:          t.PublicAuthorName,
+		PublicAuthorEmail:         t.PublicAuthorEmail,
 	})
 	if err != nil {
 		return err
@@ -262,4 +279,13 @@ func contains(xs []string, s string) bool {
 func defaultCacheDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cache", "git-copy")
+}
+
+// readFileFromHEAD reads a file's content from HEAD using git show.
+func readFileFromHEAD(ctx context.Context, repoPath, filePath string) ([]byte, error) {
+	res, err := gitx.Run(ctx, repoPath, "show", "HEAD:"+filePath)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(res.Stdout), nil
 }

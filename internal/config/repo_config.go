@@ -20,27 +20,29 @@ type RepoConfig struct {
 }
 
 type TargetDefaults struct {
-	Exclude []string          `json:"exclude"`
-	OptIn   []string          `json:"opt_in"`
-	ExtraReplacementPairs map[string]string `json:"extra_replacements,omitempty"`
+	Exclude                   []string          `json:"exclude"`
+	OptIn                     []string          `json:"opt_in"`
+	ReplaceHistoryWithCurrent []string          `json:"replace_history_with_current,omitempty"`
+	ExtraReplacementPairs     map[string]string `json:"extra_replacements,omitempty"`
 }
 
 type Target struct {
-	Label              string   `json:"label"`
-	Provider           string   `json:"provider"`
-	Account            string   `json:"account"`
-	RepoName           string   `json:"repo_name"`
-	RepoURL            string   `json:"repo_url"`
-	Description        string   `json:"description,omitempty"`
-	Topics             []string `json:"topics,omitempty"`
-	Replacement        string   `json:"replacement,omitempty"`
-	PublicAuthorName   string   `json:"public_author_name,omitempty"`
-	PublicAuthorEmail  string   `json:"public_author_email,omitempty"`
-	Exclude            []string `json:"exclude,omitempty"`
-	OptIn              []string `json:"opt_in,omitempty"`
-	Auth               AuthRef  `json:"auth,omitempty"`
-	InitialHistoryMode string   `json:"initial_history_mode,omitempty"` // "full" or "future"
-	InitialSyncAt      string   `json:"initial_sync_at,omitempty"`
+	Label                     string   `json:"label"`
+	Provider                  string   `json:"provider"`
+	Account                   string   `json:"account"`
+	RepoName                  string   `json:"repo_name"`
+	RepoURL                   string   `json:"repo_url"`
+	Description               string   `json:"description,omitempty"`
+	Topics                    []string `json:"topics,omitempty"`
+	Replacement               string   `json:"replacement,omitempty"`
+	PublicAuthorName          string   `json:"public_author_name,omitempty"`
+	PublicAuthorEmail         string   `json:"public_author_email,omitempty"`
+	Exclude                   []string `json:"exclude,omitempty"`
+	OptIn                     []string `json:"opt_in,omitempty"`
+	ReplaceHistoryWithCurrent []string `json:"replace_history_with_current,omitempty"`
+	Auth                      AuthRef  `json:"auth,omitempty"`
+	InitialHistoryMode        string   `json:"initial_history_mode,omitempty"` // "full" or "future"
+	InitialSyncAt             string   `json:"initial_sync_at,omitempty"`
 }
 
 type AuthRef struct {

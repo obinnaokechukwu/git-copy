@@ -146,3 +146,42 @@ func TestDefaultConfig_ExcludeCountMatchesVariables(t *testing.T) {
 		t.Errorf("exclude count mismatch: expected %d, got %d", expectedCount, actualCount)
 	}
 }
+
+func TestRepoConfig_ReplaceHistoryWithCurrent(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "config.json")
+
+	cfg := DefaultConfig("obinnaokechukwu", "main")
+	cfg.Defaults.ReplaceHistoryWithCurrent = []string{"LICENSE"}
+	cfg.Targets = append(cfg.Targets, Target{
+		Label:                     "public",
+		Provider:                  "custom",
+		Account:                   "johndoe",
+		RepoName:                  "repo",
+		RepoURL:                   "/tmp/does-not-matter.git",
+		Replacement:               "johndoe",
+		ReplaceHistoryWithCurrent: []string{"NOTICE"},
+	})
+
+	if err := SaveRepoConfigToFile(p, cfg); err != nil {
+		t.Fatalf("SaveRepoConfigToFile: %v", err)
+	}
+
+	cfg2, err := LoadRepoConfigFromFile(p)
+	if err != nil {
+		t.Fatalf("LoadRepoConfigFromFile: %v", err)
+	}
+
+	// Check defaults
+	if len(cfg2.Defaults.ReplaceHistoryWithCurrent) != 1 || cfg2.Defaults.ReplaceHistoryWithCurrent[0] != "LICENSE" {
+		t.Errorf("Defaults.ReplaceHistoryWithCurrent mismatch: %v", cfg2.Defaults.ReplaceHistoryWithCurrent)
+	}
+
+	// Check target
+	if len(cfg2.Targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(cfg2.Targets))
+	}
+	if len(cfg2.Targets[0].ReplaceHistoryWithCurrent) != 1 || cfg2.Targets[0].ReplaceHistoryWithCurrent[0] != "NOTICE" {
+		t.Errorf("Target.ReplaceHistoryWithCurrent mismatch: %v", cfg2.Targets[0].ReplaceHistoryWithCurrent)
+	}
+}

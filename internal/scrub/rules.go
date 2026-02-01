@@ -50,6 +50,14 @@ type Rules struct {
 	ExcludePatterns []string
 	OptInPaths      []string
 
+	// ReplaceHistoryWithCurrent specifies files whose current (HEAD) content
+	// should be used in ALL historical commits, making it appear as if the file
+	// was always that way from the start.
+	ReplaceHistoryWithCurrent []string
+	// ReplaceHistoryContent maps normalized file paths to their HEAD content.
+	// This must be populated by the caller before filtering.
+	ReplaceHistoryContent map[string][]byte
+
 	PublicAuthorName  string
 	PublicAuthorEmail string
 }
@@ -63,6 +71,12 @@ type CompiledRules struct {
 
 	exclude []string
 	optIn   map[string]bool
+
+	// replaceHistoryFiles maps normalized file paths to true for files that should
+	// have their history replaced with HEAD content.
+	replaceHistoryFiles map[string]bool
+	// replaceHistoryContent maps normalized file paths to their HEAD content (after scrubbing).
+	replaceHistoryContent map[string][]byte
 
 	publicAuthorName  string
 	publicAuthorEmail string
@@ -145,21 +159,78 @@ func Compile(r Rules) (CompiledRules, error) {
 		pubEmail = repl + "@example.invalid"
 	}
 
+	// Build replace history files map
+	replaceHistoryFiles := make(map[string]bool)
+	for _, p := range r.ReplaceHistoryWithCurrent {
+		p = normPath(p)
+		if p == "" {
+			continue
+		}
+		replaceHistoryFiles[p] = true
+	}
+
+	// Copy and scrub the replace history content
+	replaceHistoryContent := make(map[string][]byte)
+	for p, content := range r.ReplaceHistoryContent {
+		p = normPath(p)
+		if p == "" {
+			continue
+		}
+		// Scrub the content using the replacement rules we just compiled
+		// We need to create a temporary CompiledRules just for scrubbing
+		scrubbedContent := privateRe.ReplaceAllFunc(content, func(match []byte) []byte {
+			return []byte(applyCasePattern(string(match), repl))
+		})
+		for i, re := range extraRe {
+			replVal := extraPairs[i][1]
+			scrubbedContent = re.ReplaceAllFunc(scrubbedContent, func(match []byte) []byte {
+				return []byte(applyCasePattern(string(match), replVal))
+			})
+		}
+		replaceHistoryContent[p] = scrubbedContent
+	}
+
 	return CompiledRules{
-		private:           priv,
-		privateRe:         privateRe,
-		repl:              repl,
-		extra:             extraPairs,
-		extraRe:           extraRe,
-		exclude:           finalEx,
-		optIn:             opt,
-		publicAuthorName:  pubName,
-		publicAuthorEmail: pubEmail,
+		private:               priv,
+		privateRe:             privateRe,
+		repl:                  repl,
+		extra:                 extraPairs,
+		extraRe:               extraRe,
+		exclude:               finalEx,
+		optIn:                 opt,
+		replaceHistoryFiles:   replaceHistoryFiles,
+		replaceHistoryContent: replaceHistoryContent,
+		publicAuthorName:      pubName,
+		publicAuthorEmail:     pubEmail,
 	}, nil
 }
 
 func (c CompiledRules) Private() string     { return c.private }
 func (c CompiledRules) Replacement() string { return c.repl }
+
+// ShouldReplaceHistory returns true if the file should have its history
+// replaced with HEAD content.
+func (c CompiledRules) ShouldReplaceHistory(p string) bool {
+	p = normPath(p)
+	return c.replaceHistoryFiles[p]
+}
+
+// GetReplaceHistoryContent returns the scrubbed HEAD content for a file
+// that should have its history replaced. Returns nil if not found.
+func (c CompiledRules) GetReplaceHistoryContent(p string) []byte {
+	p = normPath(p)
+	return c.replaceHistoryContent[p]
+}
+
+// GetReplaceHistoryFiles returns the list of files that should have their
+// history replaced with HEAD content.
+func (c CompiledRules) GetReplaceHistoryFiles() []string {
+	files := make([]string, 0, len(c.replaceHistoryFiles))
+	for f := range c.replaceHistoryFiles {
+		files = append(files, f)
+	}
+	return files
+}
 
 func (c CompiledRules) ShouldExclude(p string) bool {
 	p = normPath(p)

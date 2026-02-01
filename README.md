@@ -11,7 +11,9 @@ Scrubbed one-way replication from private Git repos to public targets.
 - **Automatic Scrubbing**: Replaces private usernames and sensitive strings throughout Git history
 - **File Exclusion**: Exclude files by pattern (e.g., `.env`, `secrets/**`, etc.)
 - **Opt-In Override**: Selectively include files that would otherwise be excluded
+- **History Replacement**: Replace file contents throughout history (e.g., retroactively change LICENSE)
 - **Author Rewriting**: Replace commit author information with public identities
+- **Empty Commit Pruning**: Automatically drops commits that become empty after filtering
 - **Multi-Target**: Sync to multiple destinations (GitHub, GitLab, Gitea)
 - **Multi-Account Support**: Automatically uses correct credentials for different GitHub accounts
 - **Auto-Sync Daemon**: Background service auto-discovers and syncs repos
@@ -83,6 +85,10 @@ The `.git-copy/config.json` file controls scrubbing behavior:
       "*.key"
     ],
     "opt_in": [],
+    "replace_history_with_current": [
+      "LICENSE",
+      "README.md"
+    ],
     "extra_replacements": {
       "company-internal.example.com": "public.example.com"
     }
@@ -106,6 +112,7 @@ The `.git-copy/config.json` file controls scrubbing behavior:
 - **`private_username`**: Your private username to be replaced in all text/commits
 - **`defaults.exclude`**: File patterns to exclude (glob syntax, `**` supported)
 - **`defaults.opt_in`**: Override exclusions for specific files
+- **`defaults.replace_history_with_current`**: Files to replace with current content throughout history (see below)
 - **`defaults.extra_replacements`**: Additional string replacements (old → new)
 - **`targets[].label`**: Unique identifier for this sync target
 - **`targets[].provider`**: `github`, `gitlab`, or `gitea`
@@ -114,6 +121,50 @@ The `.git-copy/config.json` file controls scrubbing behavior:
 - **`targets[].replacement`**: String to replace `private_username` with
 - **`targets[].public_author_name`**: Name for rewritten commits
 - **`targets[].public_author_email`**: Email for rewritten commits
+- **`targets[].replace_history_with_current`**: Target-specific files to replace (merged with defaults)
+
+### Replace History With Current
+
+The `replace_history_with_current` feature allows you to retroactively replace file contents throughout your entire Git history. This is useful when you need to make a file appear as if it was always a certain way.
+
+**Common use cases:**
+- Changing LICENSE from MIT to Apache 2.0 retroactively
+- Updating README to reflect current branding from the start
+- Fixing configuration files that contained wrong values historically
+
+**How it works:**
+
+```
+Source history:              Public history (after sync):
+─────────────────            ────────────────────────────
+commit A: add files          commit A: add files
+commit B: add LICENSE (MIT)  commit B: add LICENSE (Apache) ← replaced
+commit C: fix bug            commit C: fix bug
+commit D: update LICENSE     [DROPPED - became empty]
+commit E: new feature        commit E: new feature
+```
+
+1. The current (HEAD) content of specified files is used
+2. When the file first appears in history, it gets the current content instead
+3. All subsequent commits that **only** modify these files are **automatically dropped** (they become empty)
+4. Commits that modify these files **and** other files keep the other changes
+
+**Example:**
+
+```json
+{
+  "defaults": {
+    "replace_history_with_current": ["LICENSE", "NOTICE"]
+  }
+}
+```
+
+This makes LICENSE and NOTICE appear unchanged throughout history, using their current content from the first commit where they appear.
+
+**Important notes:**
+- Files are replaced at their **first occurrence** in history, not injected into commits that never had them
+- The file content is scrubbed (private username replacement still applies)
+- Empty commits are pruned automatically - no trace of intermediate changes
 
 ## Multi-Account GitHub Support
 
@@ -194,10 +245,12 @@ After `git-copy init`, you'll be prompted to install the daemon for auto-sync.
    - Replaces `private_username` with `replacement` in all text
    - Applies `extra_replacements`
    - Excludes files matching `exclude` patterns (unless in `opt_in`)
+   - Replaces `replace_history_with_current` files with HEAD content
    - Rewrites author/committer information
-4. **Fast Import**: Imports the scrubbed stream into a temporary bare repo
-5. **Validation**: Checks for leaked private username or forbidden files
-6. **Push Mirror**: Force-pushes all refs to the target repository
+4. **Empty Commit Pruning**: Commits with no remaining file operations are automatically dropped
+5. **Fast Import**: Imports the scrubbed stream into a temporary bare repo
+6. **Validation**: Checks for leaked private username or forbidden files
+7. **Push Mirror**: Force-pushes all refs to the target repository
 
 ## Safety Features
 
@@ -216,6 +269,8 @@ After `git-copy init`, you'll be prompted to install the daemon for auto-sync.
 - **Compliance**: Ensure sensitive files never reach public repositories
 - **Brand Consistency**: Replace internal names with public branding
 - **Personal Privacy**: Separate work identity from public contributions
+- **License Changes**: Retroactively change LICENSE to appear as if it was always Apache/MIT/etc.
+- **Pristine History**: Make the public repo look like it was always public-ready
 
 ## Development
 

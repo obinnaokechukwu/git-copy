@@ -104,3 +104,91 @@ func TestRules_RejectReplacementContainingPrivate(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
+
+func TestRules_ReplaceHistoryWithCurrent(t *testing.T) {
+	// Test that ReplaceHistoryWithCurrent files are properly tracked
+	r, err := Compile(Rules{
+		PrivateUsername:           "obinnaokechukwu",
+		Replacement:               "johndoe",
+		ReplaceHistoryWithCurrent: []string{"LICENSE", "NOTICE", "docs/copyright.txt"},
+		ReplaceHistoryContent: map[string][]byte{
+			"LICENSE":           []byte("MIT License - Copyright obinnaokechukwu\n"),
+			"NOTICE":            []byte("Notice file content\n"),
+			"docs/copyright.txt": []byte("Copyright obinnaokechukwu 2024\n"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	// Check that files are marked for replacement
+	if !r.ShouldReplaceHistory("LICENSE") {
+		t.Errorf("expected LICENSE to be marked for replacement")
+	}
+	if !r.ShouldReplaceHistory("NOTICE") {
+		t.Errorf("expected NOTICE to be marked for replacement")
+	}
+	if !r.ShouldReplaceHistory("docs/copyright.txt") {
+		t.Errorf("expected docs/copyright.txt to be marked for replacement")
+	}
+	if r.ShouldReplaceHistory("README.md") {
+		t.Errorf("README.md should not be marked for replacement")
+	}
+
+	// Check that content is scrubbed
+	licenseContent := r.GetReplaceHistoryContent("LICENSE")
+	if licenseContent == nil {
+		t.Fatalf("expected LICENSE content to exist")
+	}
+	if string(licenseContent) != "MIT License - Copyright johndoe\n" {
+		t.Errorf("expected LICENSE content to be scrubbed, got: %q", string(licenseContent))
+	}
+
+	copyrightContent := r.GetReplaceHistoryContent("docs/copyright.txt")
+	if copyrightContent == nil {
+		t.Fatalf("expected docs/copyright.txt content to exist")
+	}
+	if string(copyrightContent) != "Copyright johndoe 2024\n" {
+		t.Errorf("expected copyright content to be scrubbed, got: %q", string(copyrightContent))
+	}
+
+	// Check that GetReplaceHistoryFiles returns all files
+	files := r.GetReplaceHistoryFiles()
+	if len(files) != 3 {
+		t.Errorf("expected 3 files, got %d", len(files))
+	}
+}
+
+func TestRules_ReplaceHistoryWithCurrentEmptyContent(t *testing.T) {
+	// Test handling of files not in HEAD (no content provided)
+	r, err := Compile(Rules{
+		PrivateUsername:           "obinnaokechukwu",
+		Replacement:               "johndoe",
+		ReplaceHistoryWithCurrent: []string{"LICENSE", "OLD_FILE"},
+		ReplaceHistoryContent: map[string][]byte{
+			"LICENSE": []byte("MIT License\n"),
+			// OLD_FILE intentionally not in ReplaceHistoryContent
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	// Both files should be marked for replacement
+	if !r.ShouldReplaceHistory("LICENSE") {
+		t.Errorf("expected LICENSE to be marked for replacement")
+	}
+	if !r.ShouldReplaceHistory("OLD_FILE") {
+		t.Errorf("expected OLD_FILE to be marked for replacement")
+	}
+
+	// LICENSE should have content
+	if r.GetReplaceHistoryContent("LICENSE") == nil {
+		t.Errorf("expected LICENSE content to exist")
+	}
+
+	// OLD_FILE should have no content
+	if r.GetReplaceHistoryContent("OLD_FILE") != nil {
+		t.Errorf("expected OLD_FILE content to be nil")
+	}
+}

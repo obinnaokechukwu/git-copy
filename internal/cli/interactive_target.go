@@ -206,6 +206,9 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 		optIn = append(optIn, ".env")
 	}
 
+	replaceHistoryStr, _ := promptString("Files to use current content throughout history (e.g., LICENSE,README.md - makes file appear unchanged)", "", false)
+	replaceHistory := splitCSV(replaceHistoryStr)
+
 	pubName, _ := promptString("Public author name (optional)", replacement, false)
 
 	// Use saved email for this account if available, otherwise use default
@@ -228,21 +231,22 @@ func interactiveTargetSetup(cfg config.RepoConfig, repoPath string) (config.Targ
 	}
 
 	return config.Target{
-		Label:              label,
-		Provider:           provName,
-		Account:            account,
-		RepoName:           repoName,
-		RepoURL:            repoURL,
-		Description:        description,
-		Topics:             topics,
-		Replacement:        replacement,
-		PublicAuthorName:   pubName,
-		PublicAuthorEmail:  pubEmail,
-		Exclude:            ex,
-		OptIn:              optIn,
-		Auth:               auth,
-		InitialHistoryMode: mode,
-		InitialSyncAt:      time.Now().Format(time.RFC3339),
+		Label:                     label,
+		Provider:                  provName,
+		Account:                   account,
+		RepoName:                  repoName,
+		RepoURL:                   repoURL,
+		Description:               description,
+		Topics:                    topics,
+		Replacement:               replacement,
+		PublicAuthorName:          pubName,
+		PublicAuthorEmail:         pubEmail,
+		Exclude:                   ex,
+		OptIn:                     optIn,
+		ReplaceHistoryWithCurrent: replaceHistory,
+		Auth:                      auth,
+		InitialHistoryMode:        mode,
+		InitialSyncAt:             time.Now().Format(time.RFC3339),
 	}, nil
 }
 
