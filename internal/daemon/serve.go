@@ -24,7 +24,25 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.Config.MaxConcurrent <= 0 {
 		s.Config.MaxConcurrent = 2
 	}
-	log.Printf("git-copy daemon started (poll=%s roots=%v)", s.Config.PollInterval, s.Config.Roots)
+
+	log.Println("========================================")
+	log.Println("git-copy daemon starting")
+	log.Printf("  Poll interval: %s", s.Config.PollInterval)
+	log.Printf("  Cache dir: %s", s.Config.CacheDir)
+	log.Printf("  Watch roots: %v", s.Config.Roots)
+	if len(s.Config.Roots) == 0 {
+		log.Println("  WARNING: No roots configured! Run 'git-copy init' in a repo to register it.")
+	}
+	log.Println("========================================")
+
+	// Do initial discovery
+	repos, _ := DiscoverRepos(ctx, DiscoverOptions{Roots: s.Config.Roots})
+	if len(repos) > 0 {
+		log.Printf("Found %d git-copy repo(s):", len(repos))
+		for _, r := range repos {
+			log.Printf("  - %s", r)
+		}
+	}
 
 	ticker := time.NewTicker(s.Config.PollInterval)
 	defer ticker.Stop()
@@ -33,8 +51,13 @@ func (s *Server) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("git-copy daemon shutting down")
 			return nil
 		case <-ticker.C:
+			// Reload config to pick up newly registered repos
+			if newCfg, err := config.LoadDaemonConfig(); err == nil {
+				s.Config = newCfg
+			}
 			repos, err := DiscoverRepos(ctx, DiscoverOptions{Roots: s.Config.Roots})
 			if err != nil {
 				log.Printf("discover error: %v", err)
@@ -56,11 +79,19 @@ func (s *Server) Run(ctx context.Context) error {
 						}
 						return
 					}
-					_, err = syncer.SyncRepo(ctx, rp, cfg, "", syncer.Options{CacheDir: s.Config.CacheDir, Validate: true})
+					results, err := syncer.SyncRepo(ctx, rp, cfg, "", syncer.Options{CacheDir: s.Config.CacheDir, Validate: true})
 					if err != nil {
 						log.Printf("sync error [%s]: %v", rp, err)
 						if s.Config.NotifyOnError {
 							notify.Error("git-copy: sync error", fmt.Sprintf("%s: %v", rp, err))
+						}
+						return
+					}
+					for _, r := range results {
+						if r.Error != nil {
+							log.Printf("[%s] %s: ERROR %v", rp, r.TargetLabel, r.Error)
+						} else if r.DidWork {
+							log.Printf("[%s] %s: synced %s → %s", rp, r.TargetLabel, r.SourceCommit, r.TargetURL)
 						}
 					}
 				}()

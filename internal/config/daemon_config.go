@@ -18,8 +18,9 @@ type DaemonConfig struct {
 func DefaultDaemonConfig() DaemonConfig {
 	home, _ := os.UserHomeDir()
 	cache := filepath.Join(home, ".cache", "git-copy")
+	// Default roots: scan home directory for git-copy repos
 	return DaemonConfig{
-		Roots:         []string{},
+		Roots:         []string{home},
 		PollInterval:  30 * time.Second,
 		CacheDir:      cache,
 		MaxConcurrent: 2,
@@ -77,4 +78,34 @@ func SaveDaemonConfig(c DaemonConfig) error {
 		return err
 	}
 	return os.WriteFile(path, b, 0o600)
+}
+
+// RegisterRepoRoot adds a repo path to the daemon's watch roots if not already present.
+// This is called during git-copy init to enable auto-sync for the repo.
+func RegisterRepoRoot(repoPath string) error {
+	cfg, err := LoadDaemonConfig()
+	if err != nil {
+		return err
+	}
+	// Normalize path
+	absPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		return err
+	}
+	// Check if already registered
+	for _, r := range cfg.Roots {
+		if expandHome(r) == absPath {
+			return nil // already registered
+		}
+	}
+	cfg.Roots = append(cfg.Roots, absPath)
+	return SaveDaemonConfig(cfg)
+}
+
+func expandHome(p string) string {
+	if len(p) > 1 && p[:2] == "~/" {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, p[2:])
+	}
+	return p
 }
