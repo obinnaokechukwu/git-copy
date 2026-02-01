@@ -90,3 +90,59 @@ func TestDefaultConfig_ContainsExpectedExclusions(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultExcludedEnvFiles_ContainsExpectedPatterns(t *testing.T) {
+	if len(DefaultExcludedEnvFiles) == 0 {
+		t.Fatal("DefaultExcludedEnvFiles should not be empty")
+	}
+
+	required := []string{".env", ".envrc", ".env.local", ".direnv/"}
+	actual := make(map[string]bool)
+	for _, p := range DefaultExcludedEnvFiles {
+		actual[p] = true
+	}
+
+	for _, r := range required {
+		if !actual[r] {
+			t.Errorf("DefaultExcludedEnvFiles missing required pattern: %q", r)
+		}
+	}
+}
+
+func TestDefaultExcludedSecrets_ContainsExpectedPatterns(t *testing.T) {
+	if len(DefaultExcludedSecrets) == 0 {
+		t.Fatal("DefaultExcludedSecrets should not be empty")
+	}
+
+	required := []string{".secrets", ".npmrc", ".netrc"}
+	actual := make(map[string]bool)
+	for _, p := range DefaultExcludedSecrets {
+		actual[p] = true
+	}
+
+	for _, r := range required {
+		if !actual[r] {
+			t.Errorf("DefaultExcludedSecrets missing required pattern: %q", r)
+		}
+	}
+}
+
+func TestDefaultConfig_OptInIsEmpty(t *testing.T) {
+	cfg := DefaultConfig("test", "main")
+
+	if len(cfg.Defaults.OptIn) != 0 {
+		t.Errorf("expected opt_in to be empty by default, got: %v", cfg.Defaults.OptIn)
+	}
+}
+
+func TestDefaultConfig_ExcludeCountMatchesVariables(t *testing.T) {
+	cfg := DefaultConfig("test", "main")
+
+	// 2 (always excluded) + env files + secrets
+	expectedCount := 2 + len(DefaultExcludedEnvFiles) + len(DefaultExcludedSecrets)
+	actualCount := len(cfg.Defaults.Exclude)
+
+	if actualCount != expectedCount {
+		t.Errorf("exclude count mismatch: expected %d, got %d", expectedCount, actualCount)
+	}
+}
