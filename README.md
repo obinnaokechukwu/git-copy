@@ -13,7 +13,9 @@ Scrubbed one-way replication from private Git repos to public targets.
 - **Opt-In Override**: Selectively include files that would otherwise be excluded
 - **Author Rewriting**: Replace commit author information with public identities
 - **Multi-Target**: Sync to multiple destinations (GitHub, GitLab, Gitea)
-- **Daemon Mode**: Automatic syncing across multiple repositories
+- **Multi-Account Support**: Automatically uses correct credentials for different GitHub accounts
+- **Auto-Sync Daemon**: Background service auto-discovers and syncs repos
+- **Topics/Tags**: Copy repository topics from source to target
 - **Safe by Default**: Validates scrubbed repos before pushing (blocks `.env`, `CLAUDE.md`, etc.)
 - **Efficient**: Uses `git fast-export`/`fast-import` for fast history rewriting
 
@@ -113,6 +115,20 @@ The `.git-copy/config.json` file controls scrubbing behavior:
 - **`targets[].public_author_name`**: Name for rewritten commits
 - **`targets[].public_author_email`**: Email for rewritten commits
 
+## Multi-Account GitHub Support
+
+If you have multiple GitHub accounts authenticated with `gh auth login`, git-copy automatically uses the correct credentials for each target:
+
+```bash
+# Check your authenticated accounts
+gh auth status
+
+# git-copy will use the right token based on target account
+git-copy sync  # Uses obinnaokechukwu's token for obinnaokechukwu/repo
+```
+
+This works for both repo creation and pushing. No manual token switching needed.
+
 ## Commands
 
 ### Repository Commands
@@ -139,21 +155,9 @@ git-copy status [--repo PATH]
 
 ### Daemon Commands
 
-The daemon watches multiple repositories and syncs automatically:
+The daemon automatically discovers and syncs git-copy enabled repositories:
 
 ```bash
-# Add a root directory to watch
-git-copy roots add /path/to/repos
-
-# Remove a root directory
-git-copy roots remove /path/to/repos
-
-# List watched roots
-git-copy roots list
-
-# List discovered repositories
-git-copy repos
-
 # Start the daemon manually
 git-copy serve
 
@@ -161,12 +165,26 @@ git-copy serve
 git-copy install
 
 # Uninstall daemon service
-git-copy uninstall
+git-copy install --uninstall
+
+# Check daemon status (Linux)
+systemctl --user status git-copy
+
+# View daemon logs (Linux)
+journalctl --user -u git-copy -f
 ```
+
+The daemon:
+- **Auto-discovers** repos with `.git-copy/config.json` in your home directory
+- **Polls every 30 seconds** for changes
+- **Logs sync activity** with commit hashes and target URLs
+- **Reloads config** each cycle to pick up new repos
 
 The `install` command automatically sets up:
 - **Linux**: systemd user service (`~/.config/systemd/user/git-copy.service`)
 - **macOS**: launchd agent (`~/Library/LaunchAgents/com.obinnaokechukwu.git-copy.plist`)
+
+After `git-copy init`, you'll be prompted to install the daemon for auto-sync.
 
 ## How It Works
 
