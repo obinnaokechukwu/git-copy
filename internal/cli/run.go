@@ -45,11 +45,14 @@ func Run(args []string) error {
 		_ = fs.Parse(args[1:])
 		return cmdListTargets(*repo)
 	case "sync":
-		fs := flag.NewFlagSet("sync", flag.ExitOnError)
-		repo := fs.String("repo", "", "path to repo (default: current directory)")
-		target := fs.String("target", "", "sync only this target label")
-		_ = fs.Parse(args[1:])
-		return cmdSync(*repo, *target)
+		s, err := parseSyncArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return cmdSync(s.repo, s.target, syncCmdOptions{
+			AuditAfterSync: s.audit,
+			AuditRemote:    s.auditRemote,
+		})
 	case "status":
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
 		repo := fs.String("repo", "", "path to repo (default: current directory)")
@@ -95,7 +98,7 @@ Usage:
   %s add-target [--repo PATH]
   %s remove-target <label> [--repo PATH]
   %s list-targets [--repo PATH]
-  %s sync [--repo PATH] [--target LABEL]
+  %s sync [--repo PATH] [--target LABEL] [--audit] [--audit-remote]
   %s status [--repo PATH]
   %s audit [--repo PATH] --target LABEL [--remote] [--string S ...]
 

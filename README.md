@@ -197,8 +197,14 @@ git-copy remove-target <label> [--repo PATH]
 # List configured targets
 git-copy list-targets [--repo PATH]
 
-# Sync to all targets (or specific target)
-git-copy sync [--repo PATH] [--target LABEL]
+# Sync to all targets (or specific target). Audits the scrubbed output by default.
+git-copy sync [--repo PATH] [--target LABEL] [--audit] [--audit-remote]
+
+# Disable post-sync audit (faster, less safe)
+git-copy sync --audit=false
+
+# Audit without syncing (local cache and/or remote mirror)
+git-copy audit [--repo PATH] --target LABEL [--remote] [--string S ...]
 
 # Show sync status
 git-copy status [--repo PATH]
@@ -257,6 +263,7 @@ After `git-copy init`, you'll be prompted to install the daemon for auto-sync.
 - **Validation**: Automatically validates scrubbed repos for:
   - Presence of private username in any file
   - Forbidden files (`.env`, `CLAUDE.md` by default)
+- **Audit (history-aware)**: `git-copy sync` audits the scrubbed mirror by default to detect forbidden paths/strings anywhere in reachable history (and can optionally audit the remote mirror)
 - **Non-negotiable Exclusions**: `.git-copy/**` and `.claude/**` are always excluded
 - **Opt-In Override**: Files in `opt_in` bypass `exclude` patterns
 - **Author Protection**: Rewrites commit authors to prevent identity leakage
