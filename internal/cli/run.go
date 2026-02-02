@@ -55,6 +55,12 @@ func Run(args []string) error {
 		repo := fs.String("repo", "", "path to repo (default: current directory)")
 		_ = fs.Parse(args[1:])
 		return cmdStatus(*repo)
+	case "audit":
+		a, err := parseAuditArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return cmdAudit(a.repo, a.target, a.remote, []string(a.strings))
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		_ = fs.Parse(args[1:])
@@ -91,6 +97,7 @@ Usage:
   %s list-targets [--repo PATH]
   %s sync [--repo PATH] [--target LABEL]
   %s status [--repo PATH]
+  %s audit [--repo PATH] --target LABEL [--remote] [--string S ...]
 
 Daemon:
   %s roots add <path>
@@ -104,7 +111,7 @@ Daemon:
 Info:
   %s show-defaults
 
-`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
+`, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe, exe)
 }
 
 func cmdShowDefaults() error {
@@ -123,4 +130,3 @@ func cmdShowDefaults() error {
 	fmt.Println(`  "opt_in": [".envrc", ".env.development"]`)
 	return nil
 }
-
