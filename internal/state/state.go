@@ -17,6 +17,7 @@ type TargetState struct {
 	LastError       string    `json:"last_error,omitempty"`
 	LastPrivateRefs string    `json:"last_private_refs,omitempty"` // hash of refs snapshot
 	LastPublicPush  string    `json:"last_public_push,omitempty"`  // hash of refs snapshot from scrubbed repo
+	LastConfigHash  string    `json:"last_config_hash,omitempty"`  // hash of config affecting scrubbing/push
 }
 
 func StatePath(repoPath string) string {

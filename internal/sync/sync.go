@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -74,8 +76,9 @@ func SyncRepo(ctx context.Context, repoPath string, cfg config.RepoConfig, onlyT
 			ts = &state.TargetState{}
 			st.Targets[t.Label] = ts
 		}
+		configHash := targetConfigHash(cfg, t)
 		// Skip if private refs unchanged and last sync succeeded
-		if ts.LastPrivateRefs == privateRefsHash && ts.LastError == "" {
+		if ts.LastPrivateRefs == privateRefsHash && ts.LastError == "" && ts.LastConfigHash == configHash {
 			results = append(results, Result{TargetLabel: t.Label, TargetURL: t.RepoURL, SourceCommit: sourceCommit, DidWork: false, Error: nil})
 			continue
 		}
@@ -90,12 +93,84 @@ func SyncRepo(ctx context.Context, repoPath string, cfg config.RepoConfig, onlyT
 			ts.LastError = ""
 			ts.LastSyncAt = time.Now()
 			ts.LastPrivateRefs = privateRefsHash
+			ts.LastConfigHash = configHash
 		}
 		results = append(results, res)
 		_ = state.Save(repoPath, st)
 	}
 
 	return results, nil
+}
+
+type configHashPayload struct {
+	Version int `json:"version"`
+
+	PrivateUsername string `json:"private_username"`
+	HeadBranch      string `json:"head_branch"`
+
+	TargetLabel    string `json:"target_label"`
+	Provider       string `json:"provider"`
+	Account        string `json:"account"`
+	RepoName       string `json:"repo_name"`
+	RepoURL        string `json:"repo_url"`
+	Replacement    string `json:"replacement"`
+	PublicName     string `json:"public_author_name"`
+	PublicEmail    string `json:"public_author_email"`
+	InitialHistory string `json:"initial_history_mode"`
+
+	Exclude                   []string          `json:"exclude"`
+	OptIn                     []string          `json:"opt_in"`
+	ReplaceHistoryWithCurrent []string          `json:"replace_history_with_current"`
+	ExtraReplacementPairs     map[string]string `json:"extra_replacements"`
+}
+
+func targetConfigHash(cfg config.RepoConfig, t config.Target) string {
+	exclude := append([]string{}, cfg.Defaults.Exclude...)
+	exclude = append(exclude, t.Exclude...)
+	optIn := append([]string{}, cfg.Defaults.OptIn...)
+	optIn = append(optIn, t.OptIn...)
+
+	replaceHistoryWithCurrent := append([]string{}, cfg.Defaults.ReplaceHistoryWithCurrent...)
+	replaceHistoryWithCurrent = append(replaceHistoryWithCurrent, t.ReplaceHistoryWithCurrent...)
+
+	// Normalize to avoid spurious differences from ordering.
+	exclude = append([]string{}, exclude...)
+	optIn = append([]string{}, optIn...)
+	replaceHistoryWithCurrent = append([]string{}, replaceHistoryWithCurrent...)
+	sort.Strings(exclude)
+	sort.Strings(optIn)
+	sort.Strings(replaceHistoryWithCurrent)
+
+	repl := t.Replacement
+	if repl == "" {
+		repl = t.Account
+	}
+
+	payload := configHashPayload{
+		Version: 1,
+
+		PrivateUsername: cfg.PrivateUsername,
+		HeadBranch:      cfg.HeadBranch,
+
+		TargetLabel:    t.Label,
+		Provider:       t.Provider,
+		Account:        t.Account,
+		RepoName:       t.RepoName,
+		RepoURL:        t.RepoURL,
+		Replacement:    repl,
+		PublicName:     t.PublicAuthorName,
+		PublicEmail:    t.PublicAuthorEmail,
+		InitialHistory: t.InitialHistoryMode,
+
+		Exclude:                   exclude,
+		OptIn:                     optIn,
+		ReplaceHistoryWithCurrent: replaceHistoryWithCurrent,
+		ExtraReplacementPairs:     cfg.Defaults.ExtraReplacementPairs,
+	}
+
+	b, _ := json.Marshal(payload)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 func syncTarget(ctx context.Context, repoPath, repoKey string, cfg config.RepoConfig, t config.Target, opts Options) error {
