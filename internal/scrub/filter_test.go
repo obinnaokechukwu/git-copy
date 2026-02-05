@@ -766,3 +766,83 @@ func TestExportFilter_TagAtEndOfStream(t *testing.T) {
 		t.Errorf("tagger should be 'publicuser', got: %s", tagger.Stdout)
 	}
 }
+
+// TestExportFilter_MultipleTagsBackToBack verifies that multiple annotated tags
+// at the end of the stream are each emitted as separate tag records. Regression
+// test for a bug where handleTag consumed lines from the next tag record.
+func TestExportFilter_MultipleTagsBackToBack(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	bare := filepath.Join(dir, "bare.git")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_, err := gitx.Run(nil, repo, "init", "-b", "main")
+	if err != nil {
+		_, err2 := gitx.Run(nil, repo, "init")
+		if err2 != nil {
+			t.Fatalf("git init: %v", err2)
+		}
+		_, _ = gitx.Run(nil, repo, "checkout", "-b", "main")
+	}
+	_, _ = gitx.Run(nil, repo, "config", "user.name", "obinnaokechukwu")
+	_, _ = gitx.Run(nil, repo, "config", "user.email", "obinnaokechukwu@private.invalid")
+
+	if err := os.WriteFile(filepath.Join(repo, "hello.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _ = gitx.Run(nil, repo, "add", "hello.txt")
+	_, _ = gitx.Run(nil, repo, "commit", "-m", "first commit")
+
+	// Tag v1
+	_, _ = gitx.Run(nil, repo, "tag", "-a", "v1.0.0", "-m", "First obinnaokechukwu release")
+
+	if err := os.WriteFile(filepath.Join(repo, "hello.txt"), []byte("hello v2\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _ = gitx.Run(nil, repo, "add", "hello.txt")
+	_, _ = gitx.Run(nil, repo, "commit", "-m", "second commit")
+
+	// Tag v2
+	_, _ = gitx.Run(nil, repo, "tag", "-a", "v2.0.0", "-m", "Second obinnaokechukwu release")
+
+	rules, err := Compile(Rules{
+		ExcludePatterns:  []string{".env"},
+		PrivateUsername:  "obinnaokechukwu",
+		Replacement:     "publicuser",
+		PublicAuthorName:  "publicuser",
+		PublicAuthorEmail: "publicuser@example.com",
+	})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	runExportFilterImport(t, repo, bare, rules)
+
+	// Both tags should exist
+	tags, err := gitx.Run(nil, bare, "tag", "-l")
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if !strings.Contains(tags.Stdout, "v1.0.0") {
+		t.Errorf("missing v1.0.0 tag, got: %s", tags.Stdout)
+	}
+	if !strings.Contains(tags.Stdout, "v2.0.0") {
+		t.Errorf("missing v2.0.0 tag, got: %s", tags.Stdout)
+	}
+
+	// Both tag messages should be scrubbed
+	for _, tag := range []string{"v1.0.0", "v2.0.0"} {
+		msg, err := gitx.Run(nil, bare, "for-each-ref", "--format=%(contents)", "refs/tags/"+tag)
+		if err != nil {
+			t.Fatalf("for-each-ref %s: %v", tag, err)
+		}
+		if strings.Contains(msg.Stdout, "obinnaokechukwu") {
+			t.Errorf("tag %s message still contains 'obinnaokechukwu': %s", tag, msg.Stdout)
+		}
+		if !strings.Contains(msg.Stdout, "publicuser") {
+			t.Errorf("tag %s message should contain 'publicuser': %s", tag, msg.Stdout)
+		}
+	}
+}

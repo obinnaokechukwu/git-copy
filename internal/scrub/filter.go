@@ -357,15 +357,14 @@ func (f *ExportFilter) handleTag(firstLine string, br *bufio.Reader, bw *bufio.W
 			if _, err := io.ReadFull(br, b); err != nil {
 				return err
 			}
-			if _, err := br.ReadByte(); err != nil {
-				if err == io.EOF {
-					// Data payload ends at stream EOF; treat as end of tag.
-					message = f.rewriteBytes(b)
-					goto EMIT
-				}
+			// Consume the optional trailing LF after data payload.
+			if _, err := br.ReadByte(); err != nil && err != io.EOF {
 				return err
 			}
 			message = f.rewriteBytes(b)
+			// Tag data is always the last field — nothing follows it.
+			// Continuing the loop would consume the next record.
+			goto EMIT
 		case line == "\n":
 			// end
 			goto EMIT
