@@ -332,7 +332,11 @@ func (f *ExportFilter) handleTag(firstLine string, br *bufio.Reader, bw *bufio.W
 
 	for {
 		line, err := br.ReadString('\n')
-		if err != nil {
+		if err == io.EOF && line == "" {
+			// Tag is the last record in the stream; treat as end of tag.
+			goto EMIT
+		}
+		if err != nil && err != io.EOF {
 			return err
 		}
 		switch {
@@ -354,6 +358,11 @@ func (f *ExportFilter) handleTag(firstLine string, br *bufio.Reader, bw *bufio.W
 				return err
 			}
 			if _, err := br.ReadByte(); err != nil {
+				if err == io.EOF {
+					// Data payload ends at stream EOF; treat as end of tag.
+					message = f.rewriteBytes(b)
+					goto EMIT
+				}
 				return err
 			}
 			message = f.rewriteBytes(b)
@@ -362,6 +371,9 @@ func (f *ExportFilter) handleTag(firstLine string, br *bufio.Reader, bw *bufio.W
 			goto EMIT
 		default:
 			extra = append(extra, line)
+		}
+		if err == io.EOF {
+			goto EMIT
 		}
 	}
 
@@ -388,13 +400,16 @@ EMIT:
 		_, _ = bw.WriteString(l)
 	}
 	if message != nil {
+		// Tag message: write data payload followed by optional trailing LF.
+		// Do NOT add a blank terminator line — unlike commits, tags have no
+		// sub-commands after the data section, and an extra blank line causes
+		// git fast-import to fail with "Unsupported command: ".
 		_, _ = bw.WriteString(fmt.Sprintf("data %d\n", len(message)))
 		if _, err := bw.Write(message); err != nil {
 			return err
 		}
 		_, _ = bw.WriteString("\n")
 	}
-	_, _ = bw.WriteString("\n")
 	return nil
 }
 

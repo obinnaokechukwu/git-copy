@@ -685,3 +685,84 @@ func TestReplaceHistoryWithCurrent_FileNotInHEAD(t *testing.T) {
 		t.Fatalf("expected OLD_LICENSE to be excluded from HEAD, got:\n%s", ls.Stdout)
 	}
 }
+
+// TestExportFilter_TagAtEndOfStream verifies that annotated tags at the end of
+// the fast-export stream are handled correctly. This is a regression test for
+// two bugs: (1) handleTag returned io.EOF when the tag was the last record,
+// (2) handleTag emitted an extra blank line after the tag data that caused
+// git fast-import to fail with "Unsupported command: ".
+func TestExportFilter_TagAtEndOfStream(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	bare := filepath.Join(dir, "bare.git")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_, err := gitx.Run(nil, repo, "init", "-b", "main")
+	if err != nil {
+		_, err2 := gitx.Run(nil, repo, "init")
+		if err2 != nil {
+			t.Fatalf("git init: %v", err2)
+		}
+		_, _ = gitx.Run(nil, repo, "checkout", "-b", "main")
+	}
+	_, _ = gitx.Run(nil, repo, "config", "user.name", "obinnaokechukwu")
+	_, _ = gitx.Run(nil, repo, "config", "user.email", "obinnaokechukwu@private.invalid")
+
+	// Create a file and commit
+	if err := os.WriteFile(filepath.Join(repo, "hello.txt"), []byte("hello world\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _ = gitx.Run(nil, repo, "add", "hello.txt")
+	_, _ = gitx.Run(nil, repo, "commit", "-m", "initial commit")
+
+	// Create an annotated tag — this will be the last record in the fast-export stream
+	_, _ = gitx.Run(nil, repo, "tag", "-a", "v1.0.0", "-m", "Release v1.0.0 with obinnaokechukwu features")
+
+	rules, err := Compile(Rules{
+		ExcludePatterns:  []string{".env"},
+		PrivateUsername:  "obinnaokechukwu",
+		Replacement:     "publicuser",
+		PublicAuthorName:  "publicuser",
+		PublicAuthorEmail: "publicuser@example.com",
+	})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	// This would fail before the fix with either:
+	// - "export filter failed: EOF" (bug 1), or
+	// - "fast-import failed: Unsupported command: " (bug 2)
+	runExportFilterImport(t, repo, bare, rules)
+
+	// Verify the tag exists in the destination and has rewritten identity
+	tagOut, err := gitx.Run(nil, bare, "tag", "-l", "-n1", "v1.0.0")
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if !strings.Contains(tagOut.Stdout, "v1.0.0") {
+		t.Errorf("expected tag v1.0.0 in output, got: %s", tagOut.Stdout)
+	}
+
+	// Verify the tag message was scrubbed (obinnaokechukwu → publicuser)
+	catTag, err := gitx.Run(nil, bare, "for-each-ref", "--format=%(contents)", "refs/tags/v1.0.0")
+	if err != nil {
+		t.Fatalf("for-each-ref: %v", err)
+	}
+	if strings.Contains(catTag.Stdout, "obinnaokechukwu") {
+		t.Errorf("tag message still contains 'obinnaokechukwu': %s", catTag.Stdout)
+	}
+	if !strings.Contains(catTag.Stdout, "publicuser") {
+		t.Errorf("tag message should contain 'publicuser': %s", catTag.Stdout)
+	}
+
+	// Verify tagger identity was rewritten
+	tagger, err := gitx.Run(nil, bare, "for-each-ref", "--format=%(taggername) %(taggeremail)", "refs/tags/v1.0.0")
+	if err != nil {
+		t.Fatalf("for-each-ref tagger: %v", err)
+	}
+	if !strings.Contains(tagger.Stdout, "publicuser") {
+		t.Errorf("tagger should be 'publicuser', got: %s", tagger.Stdout)
+	}
+}
